@@ -105,8 +105,9 @@ def main():
 
     print("=" * 50)
     print("Application running! Press Ctrl+C to exit")
-    print("Monitoring Claude Code activity in: ~/.claude/sessions/")
-    print("Character appears during active tasks and disappears after", config.idle_timeout_sec, "seconds")
+    print(f"Monitoring traced query activity in: {config.trace_file_path}")
+    print("Run queries with: python src/claude_trace_runner.py \"your query\"")
+    print("Character appears during active queries and disappears after", config.idle_timeout_sec, "seconds")
     print("=" * 50)
 
     # Run application

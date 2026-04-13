@@ -13,7 +13,9 @@ class Config:
         "animation_fps": 7,
         "movement_speed_px": 2,
         "sprite_size": 64,
-        "window_bottom_offset": 50
+        "window_bottom_offset": 50,
+        "trace_file_path": "trace/query_events.jsonl",
+        "trace_poll_interval_ms": 500
     }
 
     def __init__(self, config_file="config.json"):
@@ -93,6 +95,16 @@ class Config:
     def window_bottom_offset(self):
         """Get window bottom offset from screen edge."""
         return self.config["window_bottom_offset"]
+
+    @property
+    def trace_file_path(self):
+        """Get trace event output file path."""
+        return self.config["trace_file_path"]
+
+    @property
+    def trace_poll_interval_ms(self):
+        """Get trace polling interval in milliseconds."""
+        return self.config["trace_poll_interval_ms"]
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.

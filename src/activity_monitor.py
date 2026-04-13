@@ -1,11 +1,10 @@
-"""Activity monitoring for Claude Code task execution."""
-import os
-import time
+"""Activity monitoring from SDK hook-generated trace events."""
+import json
 from pathlib import Path
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 
 class ActivityMonitor(QThread):
-    """Background thread that monitors Claude Code activity."""
+    """Background thread that monitors query lifecycle traces."""
 
     # Signals
     activity_started = pyqtSignal()  # Emitted when Claude Code starts activity
@@ -22,130 +21,80 @@ class ActivityMonitor(QThread):
         self.is_running = False
         self.was_active = False
         self._stop_requested = False
-
-        # Claude session directory
-        self.claude_dir = Path.home() / ".claude"
-        self.sessions_dir = self.claude_dir / "sessions"
-
-        # Track last activity time
-        self.last_activity_time = 0
-        self.activity_threshold = 2  # seconds of inactivity before considering stopped
+        self.trace_path = Path(self.config.trace_file_path)
+        self.last_processed_line = 0
+        self.open_queries = set()
 
     def run(self):
         """Run the monitoring loop (executed in background thread)."""
         self.is_running = True
-        print("[MONITOR] Starting activity monitor")
-        print(f"[MONITOR] Watching: {self.sessions_dir}")
-
-        # Check that Claude directory exists
-        if not self.sessions_dir.exists():
-            print(f"[ERROR] Claude sessions directory not found: {self.sessions_dir}")
-            print("[ERROR] Make sure Claude Code is installed and has run at least once")
-            return
+        print("[MONITOR] Starting trace activity monitor")
+        print(f"[MONITOR] Watching trace file: {self.trace_path}")
 
         # Use QTimer for polling
         self.timer = QTimer()
         self.timer.timeout.connect(self._check_activity)
-        self.timer.start(self.config.poll_interval_ms)
+        self.timer.start(self.config.trace_poll_interval_ms)
 
         # Start Qt event loop for this thread
         self.exec_()
 
     def _check_activity(self):
-        """Check for Claude Code activity."""
+        """Check activity by consuming lifecycle events from trace file."""
         if self._stop_requested:
             self.timer.stop()
             self.quit()
             return
 
         try:
-            is_active = self._is_claude_active()
-            current_time = time.time()
+            self._consume_new_events()
+            is_active = bool(self.open_queries)
 
-            # Detect state changes
-            if is_active:
-                self.last_activity_time = current_time
+            if is_active and not self.was_active:
+                print("[MONITOR] Query activity detected")
+                self.activity_started.emit()
+                self.was_active = True
 
-                if not self.was_active:
-                    # Activity just started
-                    print("[MONITOR] Claude Code activity detected")
-                    self.activity_started.emit()
-                    self.was_active = True
-
-            else:
-                # Check if we've been inactive long enough
-                time_since_activity = current_time - self.last_activity_time
-
-                if self.was_active and time_since_activity >= self.activity_threshold:
-                    # Activity stopped
-                    print(f"[MONITOR] Claude Code activity stopped ({time_since_activity:.1f}s idle)")
-                    self.activity_stopped.emit()
-                    self.was_active = False
+            if not is_active and self.was_active:
+                print("[MONITOR] Query activity stopped")
+                self.activity_stopped.emit()
+                self.was_active = False
 
         except Exception as e:
             print(f"[MONITOR] Error checking activity: {e}")
 
-    def _is_claude_active(self):
-        """Check if Claude Code is actively working.
+    def _consume_new_events(self):
+        """Consume newly appended trace events and update open query set."""
+        if not self.trace_path.exists():
+            return
 
-        Returns:
-            True if Claude Code is active, False otherwise
-        """
-        try:
-            # Check for active session files
-            if not self.sessions_dir.exists():
-                return False
+        with self.trace_path.open("r", encoding="utf-8") as handle:
+            lines = handle.readlines()
 
-            # Get all session files
-            session_files = list(self.sessions_dir.glob("*.json"))
+        if self.last_processed_line >= len(lines):
+            return
 
-            if not session_files:
-                return False
+        for line in lines[self.last_processed_line:]:
+            line = line.strip()
+            if not line:
+                continue
 
-            # Check modification times of session files
-            # If any file was modified recently, Claude is active
-            current_time = time.time()
-            activity_window = 3  # Consider active if modified within 3 seconds
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
-            for session_file in session_files:
-                try:
-                    mtime = session_file.stat().st_mtime
-                    age = current_time - mtime
+            query_id = event.get("query_id")
+            if not query_id:
+                continue
 
-                    if age < activity_window:
-                        # File was recently modified - Claude is active
-                        return True
+            event_type = event.get("event_type")
+            if event_type == "query_started":
+                self.open_queries.add(query_id)
+            elif event_type in {"query_finished", "query_error"}:
+                self.open_queries.discard(query_id)
 
-                except (OSError, FileNotFoundError):
-                    continue
-
-            # Also check file-history directory (shows file edits)
-            file_history_dir = self.claude_dir / "file-history"
-            if file_history_dir.exists():
-                # Get most recent file in file-history
-                try:
-                    recent_files = sorted(
-                        file_history_dir.rglob("*"),
-                        key=lambda p: p.stat().st_mtime,
-                        reverse=True
-                    )[:3]  # Check 3 most recent
-
-                    for recent_file in recent_files:
-                        if recent_file.is_file():
-                            mtime = recent_file.stat().st_mtime
-                            age = current_time - mtime
-
-                            if age < activity_window:
-                                return True
-
-                except Exception:
-                    pass
-
-            return False
-
-        except Exception as e:
-            print(f"[MONITOR] Error checking Claude activity: {e}")
-            return False
+        self.last_processed_line = len(lines)
 
     def stop(self):
         """Stop the monitoring thread."""
