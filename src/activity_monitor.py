@@ -23,7 +23,7 @@ class ActivityMonitor(QThread):
         self._stop_requested = False
         self.trace_path = Path(self.config.trace_file_path)
         self.last_processed_line = 0
-        self.open_queries = set()
+        self.open_queries = set()  # Track active query IDs
 
     def run(self):
         """Run the monitoring loop (executed in background thread)."""

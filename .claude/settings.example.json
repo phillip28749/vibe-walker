@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'TRACE_FILE=\"trace/query_events.jsonl\"; mkdir -p \"$(dirname \"$TRACE_FILE\")\"; PREV_QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null); if [ -n \"$PREV_QUERY_ID\" ]; then TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo \"{\\\"query_id\\\":\\\"$PREV_QUERY_ID\\\",\\\"event_type\\\":\\\"query_finished\\\",\\\"timestamp\\\":$TIMESTAMP,\\\"payload\\\":{\\\"reason\\\":\\\"interrupted\\\"}}\" >> \"$TRACE_FILE\"; fi; QUERY_ID=\"query_$(date +%s%N)\"; echo \"$QUERY_ID\" > /tmp/vibe_walker_current_query.txt; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo \"{\\\"query_id\\\":\\\"$QUERY_ID\\\",\\\"event_type\\\":\\\"query_started\\\",\\\"timestamp\\\":$TIMESTAMP,\\\"payload\\\":{}}\" >> \"$TRACE_FILE\"'",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'TRACE_FILE=\"trace/query_events.jsonl\"; mkdir -p \"$(dirname \"$TRACE_FILE\")\"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo \"query_$(date +%s%N)\"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo \"{\\\"query_id\\\":\\\"$QUERY_ID\\\",\\\"event_type\\\":\\\"query_finished\\\",\\\"timestamp\\\":$TIMESTAMP,\\\"payload\\\":{}}\" >> \"$TRACE_FILE\"; rm -f /tmp/vibe_walker_current_query.txt'",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'TRACE_FILE=\"trace/query_events.jsonl\"; mkdir -p \"$(dirname \"$TRACE_FILE\")\"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo \"query_$(date +%s%N)\"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo \"{\\\"query_id\\\":\\\"$QUERY_ID\\\",\\\"event_type\\\":\\\"query_finished\\\",\\\"timestamp\\\":$TIMESTAMP,\\\"payload\\\":{\\\"reason\\\":\\\"failure\\\"}}\" >> \"$TRACE_FILE\"; rm -f /tmp/vibe_walker_current_query.txt'",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
