@@ -6,5 +6,6 @@
   "sprite_size": 64,
   "window_bottom_offset": 50,
   "trace_file_path": "trace/query_events.jsonl",
-  "trace_poll_interval_ms": 500
+  "trace_poll_interval_ms": 500,
+  "random_spawn_enabled": true
 }

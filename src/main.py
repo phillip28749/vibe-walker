@@ -97,6 +97,10 @@ def main():
     # Animator -> State manager (edge reached)
     animator.edge_reached.connect(state_manager.reverse_direction)
 
+    # Fade away animation signals
+    state_manager.fade_away_triggered.connect(animator.start_fade_away)
+    animator.animation_sequence_complete.connect(state_manager.on_fade_away_complete)
+
     print("[MAIN] All signals connected")
 
     # Start activity monitor thread

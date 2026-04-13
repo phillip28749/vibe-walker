@@ -106,6 +106,11 @@ class Config:
         """Get trace polling interval in milliseconds."""
         return self.config["trace_poll_interval_ms"]
 
+    @property
+    def random_spawn_enabled(self):
+        """Get whether random spawn position is enabled."""
+        return self.config.get("random_spawn_enabled", True)
+
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.
 

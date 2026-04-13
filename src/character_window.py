@@ -36,11 +36,6 @@ class CharacterWindow(QWidget):
         size = self.config.sprite_size
         self.setFixedSize(size, size)
 
-        # Create label for sprite display
-        self.sprite_label = QLabel(self)
-        self.sprite_label.setFixedSize(size, size)
-        self.sprite_label.setAlignment(Qt.AlignCenter)
-
         # Start hidden
         self.hide()
 
@@ -67,8 +62,8 @@ class CharacterWindow(QWidget):
         """
         if pixmap and not pixmap.isNull():
             self.current_sprite = pixmap
-            self.sprite_label.setPixmap(pixmap)
-            self.update()
+            self.update()  # Trigger repaint
+            print(f"[WINDOW] Sprite updated: {pixmap.width()}x{pixmap.height()}")
 
     def update_position(self, x, y):
         """Update window position.

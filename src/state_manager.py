@@ -14,6 +14,7 @@ class StateManager(QObject):
 
     # Signals emitted on state changes
     state_changed = pyqtSignal(CharacterState)  # Emitted when state changes
+    fade_away_triggered = pyqtSignal()  # Emitted when fade away animation should start
 
     def __init__(self, config):
         """Initialize state manager.
@@ -70,8 +71,15 @@ class StateManager(QObject):
 
     def _on_idle_timeout(self):
         """Handle idle timer timeout."""
-        print("[STATE] Idle timeout - hiding character")
+        print("[STATE] Idle timeout - triggering fade away")
         if self.current_state == CharacterState.IDLE and not self.claude_running:
+            # Trigger fade away animation instead of immediate hide
+            self.fade_away_triggered.emit()
+
+    def on_fade_away_complete(self):
+        """Called when fade away animation finishes."""
+        print("[STATE] Fade away complete - transitioning to HIDDEN")
+        if self.current_state == CharacterState.IDLE:
             self._set_state(CharacterState.HIDDEN)
 
     def _set_state(self, new_state):
