@@ -1,0 +1,8 @@
+{
+  "poll_interval_ms": 1000,
+  "idle_timeout_sec": 7,
+  "animation_fps": 7,
+  "movement_speed_px": 2,
+  "sprite_size": 64,
+  "window_bottom_offset": 50
+}
