@@ -16,7 +16,7 @@ def cleanup_orphaned_queries(trace_file_path):
         return
 
     # Read all events
-    with trace_path.open("r", encoding="utf-8") as f:
+    with open(trace_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     # Track query states
@@ -58,7 +58,7 @@ def cleanup_orphaned_queries(trace_file_path):
 
     # Write cleanup events
     timestamp = time.time()
-    with trace_path.open("a", encoding="utf-8") as f:
+    with open(trace_path, "a", encoding="utf-8") as f:
         for query_id in orphaned:
             cleanup_event = {
                 "query_id": query_id,
@@ -73,7 +73,7 @@ def cleanup_orphaned_queries(trace_file_path):
     print("The character should stop and disappear within 7 seconds.")
 
 if __name__ == "__main__":
-    # Default trace file path (relative to script location)
+    # Default trace file path
     trace_file = "trace/query_events.jsonl"
 
     print("=" * 50)

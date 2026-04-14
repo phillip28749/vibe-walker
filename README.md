@@ -2,6 +2,8 @@
 
 A fun Windows desktop application that displays a walking pixel character on your taskbar whenever Claude Code is running!
 
+> **✨ NEW:** Setup is now automatic! Just run `python src/main.py` and it will check and configure everything for you.
+
 ## Features
 
 - **Responsive Character**: Pixel character appears when you send messages to Claude Code

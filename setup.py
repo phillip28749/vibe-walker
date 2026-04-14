@@ -18,6 +18,9 @@ def setup_global_hooks():
     # Convert to forward slashes for bash compatibility
     trace_file_str = str(trace_file).replace("\\", "/")
 
+    # Convert to bash-compatible path format
+    bash_trace_path = trace_file_str.replace("C:/", "/c/")
+
     print(f"Repository directory: {repo_dir}")
     print(f"Trace file will be: {trace_file}")
     print()
@@ -45,9 +48,6 @@ def setup_global_hooks():
         settings["hooks"] = {}
 
     # Create hook commands with the correct trace file path
-    # Using bash-compatible path format
-    bash_trace_path = trace_file_str.replace("C:/", "/c/")
-
     user_prompt_hook = {
         "matcher": "",
         "hooks": [

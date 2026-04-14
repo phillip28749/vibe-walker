@@ -24,6 +24,7 @@ class ActivityMonitor(QThread):
         self.trace_path = Path(self.config.trace_file_path)
         self.last_processed_line = 0
         self.open_queries = set()  # Track active query IDs
+        self._trace_file_warning_shown = False  # Track if warning was shown
 
     def run(self):
         """Run the monitoring loop (executed in background thread)."""
@@ -66,6 +67,10 @@ class ActivityMonitor(QThread):
     def _consume_new_events(self):
         """Consume newly appended trace events and update open query set."""
         if not self.trace_path.exists():
+            if not self._trace_file_warning_shown:
+                print(f"[INFO] Waiting for Claude Code activity...")
+                print(f"[INFO] Trace file will be created at: {self.trace_path}")
+                self._trace_file_warning_shown = True
             return
 
         with self.trace_path.open("r", encoding="utf-8") as handle:
