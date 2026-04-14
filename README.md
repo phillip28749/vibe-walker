@@ -1,8 +1,11 @@
-# Vibe Walker 🚶
+<div align="center">
 
-A fun Windows desktop application that displays a walking pixel character on your taskbar whenever Claude Code is running!
+![Vibe Walker Wallpaper](wallpaper/wall%20paper.png)
+</div>
 
-> **✨ NEW:** Setup is now automatic! Just run `python src/main.py` and it will check and configure everything for you.
+A fun Windows desktop app featuring a tiny pixel assistant that keeps track and lets you know when your Claude Code has finished running.
+
+> **✨ NEW:** Fully automated setup! Just `pip install -r requirements.txt` then `python src/main.py` - it handles everything else.
 
 ## Features
 
@@ -21,7 +24,7 @@ A fun Windows desktop application that displays a walking pixel character on you
 - psutil
 - Pillow
 
-## Quick Start (Automated Setup)
+## Quick Start
 
 1. **Clone the repository**:
    ```bash
@@ -29,48 +32,23 @@ A fun Windows desktop application that displays a walking pixel character on you
    cd vibe-walker
    ```
 
-2. **Create and activate a virtual environment**:
-   
-   PowerShell:
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
-
-   CMD:
-   ```bat
-   python -m venv .venv
-   .\.venv\Scripts\activate.bat
-   ```
-
-   Git Bash:
-   ```bash
-   python -m venv .venv
-   source .venv/Scripts/activate
-   ```
-
-3. **Install dependencies**:
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Run the setup script** (configures global Claude Code hooks):
+3. **Run the app** (automatically handles all setup):
    ```bash
-   python setup.py
+   python src/main.py
    ```
    
    This automatically:
-   - Detects your repo location
+   - Generates sprites if they don't exist
    - Configures Claude Code hooks in `~/.claude/settings.json`
    - Creates a backup of your existing settings
-   - Sets up trace event monitoring
+   - Starts the desktop character monitor
 
-5. **Generate sprites** (if needed):
-   ```bash
-   python generate_sprites.py
-   ```
-
-That's it! You're ready to run Vibe Walker.
+That's it! The character will appear on your taskbar when you use Claude Code.
 
 ## Usage
 
@@ -82,7 +60,7 @@ From the project root directory:
 python src/main.py
 ```
 
-This starts the desktop character and monitors trace lifecycle events.
+On first run, this automatically sets up everything (hooks, sprites, config). On subsequent runs, it simply starts the character monitor.
 
 ### Using Claude Code
 
@@ -206,11 +184,11 @@ python generate_sprites.py
 
 ### Character doesn't appear
 
-- **Verify hooks are set up**: Run `python setup.py` to configure hooks
 - **Check monitor is running**: Run `python src/main.py` from the **project root**
 - **Check console output**: Should show "[ANIMATOR] Loaded sprite: ..." messages
 - **Verify trace events**: Check that `trace/query_events.jsonl` is being created when you send messages
 - **Ensure PyQt5 is installed**: `pip install PyQt5`
+- **Re-run setup**: If hooks aren't working, run `python src/main.py` again to reconfigure
 
 ### Character appears behind taskbar
 
