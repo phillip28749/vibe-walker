@@ -98,8 +98,20 @@ class Config:
 
     @property
     def trace_file_path(self):
-        """Get trace event output file path."""
-        return self.config["trace_file_path"]
+        """Get trace event output file path.
+
+        Resolves relative paths relative to the project root directory.
+        """
+        path = self.config["trace_file_path"]
+        path_obj = Path(path)
+
+        # If it's already absolute, return as-is
+        if path_obj.is_absolute():
+            return str(path_obj)
+
+        # Otherwise, resolve relative to project root
+        root_dir = Path(__file__).parent.parent
+        return str(root_dir / path)
 
     @property
     def trace_poll_interval_ms(self):

@@ -19,46 +19,56 @@ A fun Windows desktop application that displays a walking pixel character on you
 - psutil
 - Pillow
 
-## Installation
+## Quick Start (Automated Setup)
 
-1. **Clone or download this repository**:
+1. **Clone the repository**:
    ```bash
    git clone https://github.com/yourusername/vibe-walker.git
    cd vibe-walker
    ```
 
-2. **Set up Claude Code hooks** (required for automatic detection):
-   ```bash
-   cp .claude/settings.example.json .claude/settings.json
-   ```
+2. **Create and activate a virtual environment**:
    
-   This configures Claude Code to write trace events when you use it in this project.
-
-3. **Create and activate a virtual environment**:
-
    PowerShell:
-
    ```powershell
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    ```
 
    CMD:
-
    ```bat
    python -m venv .venv
    .\.venv\Scripts\activate.bat
    ```
 
-4. **Install dependencies**:
+   Git Bash:
+   ```bash
+   python -m venv .venv
+   source .venv/Scripts/activate
+   ```
+
+3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-5. **Generate sprites** (already done if sprites/ folder exists):
+4. **Run the setup script** (configures global Claude Code hooks):
+   ```bash
+   python setup.py
+   ```
+   
+   This automatically:
+   - Detects your repo location
+   - Configures Claude Code hooks in `~/.claude/settings.json`
+   - Creates a backup of your existing settings
+   - Sets up trace event monitoring
+
+5. **Generate sprites** (if needed):
    ```bash
    python generate_sprites.py
    ```
+
+That's it! You're ready to run Vibe Walker.
 
 ## Usage
 
@@ -124,15 +134,28 @@ Edit `config.json` to customize behavior:
 
 ## How It Works
 
-1. **Claude Code Hooks**: When you use Claude Code, hooks write lifecycle events to `trace/query_events.jsonl`
-   - `UserPromptSubmit` → writes `query_started` (also closes interrupted queries)
-   - `Stop` → writes `query_finished` when query completes normally
+1. **Global Hooks**: Configured in `~/.claude/settings.json` (works in ALL repos)
+   - `UserPromptSubmit` → writes `query_started` event (also closes interrupted queries)
+   - `Stop` → writes `query_finished` when query completes
    - `StopFailure` → writes `query_finished` when query fails
-2. **Interrupt Detection**: When you send a new message while a query is running, `UserPromptSubmit` automatically closes the previous query
-3. **Trace Monitoring**: ActivityMonitor continuously reads trace events
-4. **State Management**: Tracks character state (Hidden, Walking Left, Walking Right, Idle)
-5. **Animation**: Cycles through sprite frames for smooth walking animation
-6. **Window Overlay**: Displays character in a transparent, click-through window above taskbar
+   - Events are written to `<repo>/trace/query_events.jsonl`
+
+2. **Trace Monitoring**: ActivityMonitor reads the trace file and detects:
+   - When queries start (character appears and walks)
+   - When queries finish (character stops and goes idle)
+   - Orphaned queries (stuck states)
+
+3. **State Management**: Character has 4 states:
+   - `HIDDEN` - Not visible
+   - `WALKING_RIGHT/LEFT` - Active query running
+   - `IDLE` - Query finished, standing still for 7 seconds
+
+4. **Animation**: Sprite-based animation with:
+   - Walk cycles (left and right)
+   - Idle pose
+   - Fade-away effect when disappearing
+
+5. **Window Overlay**: Transparent, click-through PyQt5 window above taskbar
 
 ## Customizing the Character
 
@@ -181,8 +204,8 @@ python generate_sprites.py
 
 ### Character doesn't appear
 
-- **Verify hooks are set up**: Make sure you copied `.claude/settings.example.json` to `.claude/settings.json`
-- **Check monitor is running**: Run `python src/main.py` from the **project root** (not from `src/` directory)
+- **Verify hooks are set up**: Run `python setup.py` to configure hooks
+- **Check monitor is running**: Run `python src/main.py` from the **project root**
 - **Check console output**: Should show "[ANIMATOR] Loaded sprite: ..." messages
 - **Verify trace events**: Check that `trace/query_events.jsonl` is being created when you send messages
 - **Ensure PyQt5 is installed**: `pip install PyQt5`
@@ -197,17 +220,27 @@ python generate_sprites.py
 - Reduce `animation_fps` in `config.json`
 - Close other resource-intensive applications
 
-### Character doesn't disappear after finishing
+### Character doesn't disappear after finishing (Stuck Walking)
 
-- **Check console logs** for state transitions
-- **Verify idle timeout**: Check `idle_timeout_sec` in `config.json` (default: 7 seconds)
-- **Interrupt detection**: Send a new message to Claude Code to force cleanup of stuck queries
-- **Check trace file**: Look at `trace/query_events.jsonl` - each `query_started` should have a matching `query_finished`
+This happens when queries don't get properly closed (orphaned queries).
 
-### Character stays visible after interruption
+**Quick fix:**
+```bash
+# Run the cleanup script
+python cleanup_orphaned_queries.py
 
-- **Send any message** to Claude Code - this triggers cleanup of interrupted queries
-- **Restart the monitor** if the character is stuck
+# Or manually clear the trace file
+echo "" > trace/query_events.jsonl
+```
+
+**Why this happens:**
+- The Stop hook didn't fire properly
+- Query was interrupted before completion
+- Multiple hook configurations (check for duplicate hooks in local `.claude/settings.json`)
+
+**Prevention:**
+- Don't add hooks to local `.claude/settings.json` in the repo (only use global settings)
+- Run cleanup script when character gets stuck
 
 ## Development
 
@@ -215,22 +248,27 @@ python generate_sprites.py
 
 ```
 vibe-walker/
-├── .claude/
-│   └── settings.example.json # Claude Code hooks configuration template
+├── .claude/                   # Local development settings (gitignored)
 ├── src/
-│   ├── __init__.py           # Package initialization
-│   ├── main.py               # Application entry point
-│   ├── config.py             # Configuration management
-│   ├── state_manager.py      # State machine logic
-│   ├── activity_monitor.py   # Trace event monitoring
-│   ├── animator.py           # Sprite animation
-│   ├── character_window.py   # Transparent window overlay
-│   └── claude_trace_runner.py # Optional: Manual SDK query runner (for testing)
-├── sprites/                  # Sprite images (64x64 PNG)
-├── config.json               # Application configuration
-├── requirements.txt          # Python dependencies
-├── generate_sprites.py       # Sprite generation utility
-└── README.md                 # This file
+│   ├── __init__.py            # Package initialization
+│   ├── main.py                # Application entry point
+│   ├── config.py              # Configuration management
+│   ├── state_manager.py       # State machine logic
+│   ├── activity_monitor.py    # Trace event monitoring
+│   ├── animator.py            # Sprite animation
+│   ├── character_window.py    # Transparent window overlay
+│   └── particle_system.py     # Particle effects
+├── sprites/                   # Sprite images (64x64 PNG)
+├── trace/                     # Query event logs (auto-created)
+│   └── query_events.jsonl     # Trace events from Claude Code
+├── config.json                # Application configuration (portable)
+├── setup.py                   # Automated setup script
+├── cleanup_orphaned_queries.py # Manual cleanup utility
+├── cleanup.bat / .sh          # Quick cleanup scripts
+├── requirements.txt           # Python dependencies
+├── generate_sprites.py        # Sprite generation utility
+├── GLOBAL_SETUP.md            # Global setup documentation
+└── README.md                  # This file
 ```
 
 ### Adding New Features

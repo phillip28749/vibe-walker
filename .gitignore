@@ -58,6 +58,5 @@ Thumbs.db
 
 # Project specific
 nohup.out
-.claude/*
-!.claude/settings.example.json
+.claude/
 trace/
