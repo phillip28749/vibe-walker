@@ -15,7 +15,7 @@ from animator import Animator
 from character_window import CharacterWindow
 
 # Required hook version - must match setup.py
-REQUIRED_HOOK_VERSION = "1.0.0"
+REQUIRED_HOOK_VERSION = "2.0.0"
 
 def check_setup():
     """Check if Vibe Walker is properly set up and offer to fix if not."""

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Hook version - increment this when hooks need updating
-HOOK_VERSION = "1.0.0"
+HOOK_VERSION = "2.0.0"
 
 def setup_global_hooks(force=False):
     """Configure global Claude Code hooks with the correct trace file path."""
@@ -50,6 +50,25 @@ def setup_global_hooks(force=False):
     # Ensure hooks section exists
     if "hooks" not in settings:
         settings["hooks"] = {}
+
+    # Helper function to create per-tool PermissionRequest hooks
+    def create_permission_request_hooks():
+        """Create PermissionRequest hooks for each tool type with accurate tool names."""
+        tools = ['Bash', 'Write', 'Edit', 'Read', 'Grep', 'Glob', 'Agent', 'Skill', 'Config']
+        hooks = []
+
+        for tool_name in tools:
+            hook = {
+                "matcher": tool_name,
+                "hooks": [{
+                    "type": "command",
+                    "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_needed\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"permission_request\\",\\"tool_name\\":\\"{tool_name}\\"}}}}" >> "$TRACE_FILE"\'',
+                    "async": True
+                }]
+            }
+            hooks.append(hook)
+
+        return hooks
 
     # Create hook commands with the correct trace file path
     user_prompt_hook = {
@@ -112,7 +131,29 @@ def setup_global_hooks(force=False):
         "hooks": [
             {
                 "type": "command",
-                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_handled\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"post_tool_use\\"}}}}" >> "$TRACE_FILE"\'',
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_handled\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"post_tool_use\\",\\"tool_name\\":\\"$TOOL_NAME\\",\\"success\\":true}}}}" >> "$TRACE_FILE"\'',
+                "async": True
+            }
+        ]
+    }
+
+    post_tool_use_failure_hook = {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_handled\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"post_tool_use_failure\\",\\"tool_name\\":\\"$TOOL_NAME\\",\\"success\\":false}}}}" >> "$TRACE_FILE"\'',
+                "async": True
+            }
+        ]
+    }
+
+    permission_denied_hook = {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_denied\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"permission_denied\\",\\"tool_name\\":\\"$TOOL_NAME\\"}}}}" >> "$TRACE_FILE"\'',
                 "async": True
             }
         ]
@@ -122,9 +163,12 @@ def setup_global_hooks(force=False):
     settings["hooks"]["UserPromptSubmit"] = [user_prompt_hook]
     settings["hooks"]["Stop"] = [stop_hook]
     settings["hooks"]["StopFailure"] = [stop_failure_hook]
-    settings["hooks"]["PreToolUse"] = [pre_tool_use_hook]
-    settings["hooks"]["PostToolUse"] = [post_tool_use_hook]
+    settings["hooks"]["PermissionRequest"] = create_permission_request_hooks()  # New: accurate permission dialog detection
+    settings["hooks"]["PermissionDenied"] = [permission_denied_hook]  # New: detect user rejections
+    settings["hooks"]["PostToolUse"] = [post_tool_use_hook]  # Updated: includes success flag
+    settings["hooks"]["PostToolUseFailure"] = [post_tool_use_failure_hook]  # New: detect tool failures
     settings["hooks"]["Notification"] = [notification_hook]
+    # PreToolUse removed - PermissionRequest is more accurate
 
     # Store version metadata
     if "vibe_walker" not in settings:

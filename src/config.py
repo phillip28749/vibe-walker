@@ -18,7 +18,9 @@ class Config:
         "trace_poll_interval_ms": 500,
         "action_detection_mode": "hybrid",
         "timing_threshold_sec": 2.0,
-        "debug_action_detection": False
+        "debug_action_detection": False,
+        "permission_timeout_sec": 60,  # Timeout for permission dialogs
+        "action_timeout_sec": 30       # Timeout for other actions
     }
 
     def __init__(self, config_file="config.json"):

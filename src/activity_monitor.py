@@ -120,62 +120,75 @@ class ActivityMonitor(QThread):
             event_type = event.get("event_type")
             if event_type == "query_started":
                 self.open_queries.add(query_id)
+
             elif event_type in {"query_finished", "query_error"}:
                 self.open_queries.discard(query_id)
-                # Reset action_needed when query finishes (e.g., user rejected tool)
-                if self.current_activity_status == "action_needed":
-                    self.current_activity_status = "none"
-                    print("[MONITOR] 🔵 Query ended while waiting for action - stopping animation")
-                    self.action_needed_stopped.emit()  # Stop waving animation
-                # Clean up pending actions for this query
-                self.pending_actions.pop(query_id, None)
+                # Clean up any pending actions for this query
+                self._cleanup_pending_action(query_id, reason="query_ended")
+
             elif event_type == "action_needed":
-                # Store pending action for potential timing analysis
+                # Store pending action
+                trigger = event.get('payload', {}).get('trigger')
+                tool_name = event.get('payload', {}).get('tool_name', 'unknown')
+
                 self.pending_actions[query_id] = {
                     'event': event,
                     'timestamp': event['timestamp'],
-                    'tool_name': event.get('payload', {}).get('tool_name', 'unknown')
+                    'tool_name': tool_name,
+                    'trigger': trigger
                 }
 
-                # Primary detection: Check if matcher confirmed manual-approval tool
-                should_trigger, reason = self._should_trigger_animation(event, None)
-
-                if should_trigger:
-                    # Confirmed manual-approval tool - trigger animation immediately
+                # Only trigger animation for permission_request (dialog shown)
+                if trigger == "permission_request":
                     if self.current_activity_status != "action_needed":
                         self.current_activity_status = "action_needed"
-                        tool_name = self.pending_actions[query_id]['tool_name']
-                        print(f"[MONITOR] 🔴 Action needed - {tool_name} requires approval ({reason})")
+                        print(f"[MONITOR] 🔴 Permission requested - {tool_name} needs approval")
                         self.action_needed_started.emit()
-                else:
-                    # Not a known manual-approval tool - will check timing when action_handled arrives
-                    if self.config.get('debug_action_detection', False):
-                        print(f"[DEBUG] Deferred: {self.pending_actions[query_id]['tool_name']} - waiting for timing ({reason})")
-            elif event_type == "action_handled":
-                # Retrieve corresponding action_needed event
+                elif self.config.get('debug_action_detection', False):
+                    print(f"[DEBUG] Action needed: {tool_name} (trigger: {trigger})")
+
+            elif event_type == "action_denied":
+                # User rejected the permission
                 pending = self.pending_actions.get(query_id)
+                if pending:
+                    tool_name = pending['tool_name']
+                    print(f"[MONITOR] 🚫 Permission denied - {tool_name} rejected by user")
+
+                    # Stop animation if active
+                    if self.current_activity_status == "action_needed":
+                        self.current_activity_status = "thinking"
+                        self.action_needed_stopped.emit()
+
+                    # Clean up
+                    self.pending_actions.pop(query_id, None)
+
+            elif event_type == "action_handled":
+                # Tool executed (success or failure)
+                pending = self.pending_actions.get(query_id)
+                success = event.get('payload', {}).get('success', True)
+                tool_name = event.get('payload', {}).get('tool_name', 'unknown')
 
                 if pending:
                     time_gap = event['timestamp'] - pending['timestamp']
 
-                    # If we already triggered (matcher-based), stop animation
+                    # Stop animation if active
                     if self.current_activity_status == "action_needed":
                         self.current_activity_status = "thinking"
-                        print(f"[MONITOR] ✅ Action handled - {pending['tool_name']} completed ({time_gap:.2f}s)")
+                        status = "✅" if success else "❌"
+                        result = "completed" if success else "failed"
+                        print(f"[MONITOR] {status} {tool_name} {result} ({time_gap:.2f}s)")
                         self.action_needed_stopped.emit()
-
-                    # If we haven't triggered yet, perform retroactive timing check
-                    else:
-                        should_trigger, reason = self._should_trigger_animation(pending['event'], event)
-
-                        if should_trigger and time_gap > 2.0:
-                            # Retroactive detection: user was prompted but tool wasn't in matcher
-                            print(f"[MONITOR] ⚠️ Retroactive: {pending['tool_name']} took {time_gap:.2f}s (likely manual, consider adding to matcher)")
-                        elif self.config.get('debug_action_detection', False):
-                            print(f"[DEBUG] Completed: {pending['tool_name']} in {time_gap:.3f}s ({reason})")
+                    elif self.config.get('debug_action_detection', False):
+                        result = "completed" if success else "failed"
+                        print(f"[DEBUG] {tool_name} {result} ({time_gap:.2f}s)")
 
                     # Clean up
                     self.pending_actions.pop(query_id, None)
+                else:
+                    # No pending action - might be auto-approved tool
+                    if self.config.get('debug_action_detection', False):
+                        result = "completed" if success else "failed"
+                        print(f"[DEBUG] {tool_name} {result} (auto-approved, no dialog)")
 
         self.last_processed_line = len(lines)
 
@@ -192,54 +205,24 @@ class ActivityMonitor(QThread):
 
         # Clean up timed out actions
         for query_id in timed_out_queries:
-            pending = self.pending_actions.pop(query_id)
-            tool_name = pending['tool_name']
-            print(f"[MONITOR] ⏱️ Action timeout - {tool_name} (user likely rejected or ignored)")
+            self._cleanup_pending_action(query_id, reason="timeout (user likely rejected or ignored)")
 
-            # If we're in action_needed status, stop the animation
+    def _cleanup_pending_action(self, query_id, reason="unknown"):
+        """Clean up a pending action and stop animation if needed.
+
+        Args:
+            query_id: Query ID to clean up
+            reason: Reason for cleanup (for logging)
+        """
+        pending = self.pending_actions.pop(query_id, None)
+        if pending:
+            tool_name = pending['tool_name']
+            print(f"[MONITOR] ⏱️ Cleaning up {tool_name} - {reason}")
+
+            # Stop animation if active
             if self.current_activity_status == "action_needed":
                 self.current_activity_status = "none"
                 self.action_needed_stopped.emit()
-
-    def _should_trigger_animation(self, action_needed_event, action_handled_event=None):
-        """Determine if action_needed should trigger animation using hybrid detection.
-
-        Method 1 (Primary): Trust the hook matcher - if action_needed fired, it's manual-approval
-        Method 2 (Backup): Timing analysis - checks if gap indicates user prompt
-
-        Args:
-            action_needed_event: The pre-tool event dict
-            action_handled_event: The post-tool event dict (or None if still pending)
-
-        Returns:
-            tuple: (should_trigger: bool, reason: str)
-        """
-        # Primary: Trust the hook matcher
-        # If this event exists, it means PreToolUse hook fired, which means
-        # the matcher (Bash|Write|Edit|Agent|Skill|Config) already confirmed
-        # this is a manual-approval tool. So we should ALWAYS trigger.
-        tool_name = action_needed_event.get('payload', {}).get('tool_name', 'matched_by_hook')
-
-        # If the hook fired, trust that it matched a manual-approval tool
-        if action_needed_event.get('payload', {}).get('trigger') == 'pre_tool_use':
-            return (True, f"matcher:{tool_name}")
-
-        # Backup: Timing analysis for other action_needed sources (e.g., notification hook)
-        if action_handled_event is None:
-            return (False, "pending")
-
-        time_gap = action_handled_event['timestamp'] - action_needed_event['timestamp']
-
-        # Gap > 2s = user was prompted for approval
-        if time_gap > 2.0:
-            return (True, f"timing:{time_gap:.2f}s")
-
-        # Gap < 0.5s = definitely auto-approved
-        if time_gap < 0.5:
-            return (False, f"auto:{time_gap:.2f}s")
-
-        # Gray area (0.5-2s): default to NOT triggering to avoid false positives
-        return (False, f"gray:{time_gap:.2f}s")
 
     def stop(self):
         """Stop the monitoring thread."""
