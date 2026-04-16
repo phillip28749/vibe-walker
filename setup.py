@@ -1,9 +1,13 @@
 """Setup script for Vibe Walker - Configures global Claude Code hooks."""
 import json
 import os
+import sys
 from pathlib import Path
 
-def setup_global_hooks():
+# Hook version - increment this when hooks need updating
+HOOK_VERSION = "1.0.0"
+
+def setup_global_hooks(force=False):
     """Configure global Claude Code hooks with the correct trace file path."""
 
     print("=" * 60)
@@ -122,6 +126,13 @@ def setup_global_hooks():
     settings["hooks"]["PostToolUse"] = [post_tool_use_hook]
     settings["hooks"]["Notification"] = [notification_hook]
 
+    # Store version metadata
+    if "vibe_walker" not in settings:
+        settings["vibe_walker"] = {}
+    settings["vibe_walker"]["hook_version"] = HOOK_VERSION
+    from datetime import datetime
+    settings["vibe_walker"]["last_updated"] = datetime.now().isoformat()
+
     # Backup existing settings
     if claude_settings.exists():
         backup_path = claude_settings.with_suffix('.json.backup')
@@ -138,7 +149,7 @@ def setup_global_hooks():
 
     print()
     print("=" * 60)
-    print("[SUCCESS] Vibe Walker hooks configured!")
+    print(f"[SUCCESS] Vibe Walker hooks configured! (v{HOOK_VERSION})")
     print("=" * 60)
     print()
     print("Next steps:")
@@ -153,7 +164,12 @@ def setup_global_hooks():
 
 if __name__ == "__main__":
     try:
-        success = setup_global_hooks()
+        # Check for --force flag
+        force = "--force" in sys.argv
+        if force:
+            print("[FORCE] Force update enabled - will overwrite existing hooks\n")
+
+        success = setup_global_hooks(force=force)
         if not success:
             exit(1)
     except Exception as e:

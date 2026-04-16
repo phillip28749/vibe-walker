@@ -14,6 +14,9 @@ from activity_monitor import ActivityMonitor
 from animator import Animator
 from character_window import CharacterWindow
 
+# Required hook version - must match setup.py
+REQUIRED_HOOK_VERSION = "1.0.0"
+
 def check_setup():
     """Check if Vibe Walker is properly set up and offer to fix if not."""
     repo_dir = Path(__file__).parent.parent
@@ -28,26 +31,38 @@ def check_setup():
     if missing_sprites:
         issues.append(("sprites", f"Missing sprites: {', '.join(missing_sprites)}"))
 
-    # Check 2: Global hooks configured
+    # Check 2: Global hooks configured and up-to-date
     claude_settings = Path.home() / ".claude" / "settings.json"
     hooks_configured = False
+    hooks_outdated = False
 
     if claude_settings.exists():
         try:
             with open(claude_settings, 'r', encoding='utf-8') as f:
                 settings = json.load(f)
             hooks = settings.get("hooks", {})
+            vibe_walker_meta = settings.get("vibe_walker", {})
+
             # Check if Vibe Walker hooks exist
             if "UserPromptSubmit" in hooks and "Stop" in hooks:
-                # Simple check - if hooks mention vibe-walker or trace
+                # Check if hooks mention vibe-walker or trace (legacy check)
                 hook_cmd = str(hooks.get("UserPromptSubmit", [{}])[0])
                 if "vibe-walker" in hook_cmd or "trace/query_events" in hook_cmd:
                     hooks_configured = True
+
+                    # Check version
+                    installed_version = vibe_walker_meta.get("hook_version", "0.0.0")
+                    if installed_version != REQUIRED_HOOK_VERSION:
+                        hooks_outdated = True
+                        hooks_configured = False  # Treat outdated as not configured
         except:
             pass
 
     if not hooks_configured:
-        issues.append(("hooks", "Claude Code hooks not configured"))
+        if hooks_outdated:
+            issues.append(("hooks", f"Claude Code hooks outdated (v{installed_version} → v{REQUIRED_HOOK_VERSION})"))
+        else:
+            issues.append(("hooks", "Claude Code hooks not configured"))
 
     # If there are issues, offer to fix them
     if issues:
