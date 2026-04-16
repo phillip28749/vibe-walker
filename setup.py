@@ -81,10 +81,46 @@ def setup_global_hooks():
         ]
     }
 
+    pre_tool_use_hook = {
+        "matcher": "Bash|Write|Edit|Agent|Skill|Config",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_needed\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"pre_tool_use\\",\\"tool_name\\":\\"$TOOL_NAME\\"}}}}" >> "$TRACE_FILE"\'',
+                "async": True
+            }
+        ]
+    }
+
+    notification_hook = {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_needed\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"notification\\"}}}}" >> "$TRACE_FILE"\'',
+                "async": True
+            }
+        ]
+    }
+
+    post_tool_use_hook = {
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_handled\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"post_tool_use\\"}}}}" >> "$TRACE_FILE"\'',
+                "async": True
+            }
+        ]
+    }
+
     # Update hooks
     settings["hooks"]["UserPromptSubmit"] = [user_prompt_hook]
     settings["hooks"]["Stop"] = [stop_hook]
     settings["hooks"]["StopFailure"] = [stop_failure_hook]
+    settings["hooks"]["PreToolUse"] = [pre_tool_use_hook]
+    settings["hooks"]["PostToolUse"] = [post_tool_use_hook]
+    settings["hooks"]["Notification"] = [notification_hook]
 
     # Backup existing settings
     if claude_settings.exists():

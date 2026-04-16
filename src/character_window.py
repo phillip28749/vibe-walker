@@ -63,7 +63,7 @@ class CharacterWindow(QWidget):
         if pixmap and not pixmap.isNull():
             self.current_sprite = pixmap
             self.update()  # Trigger repaint
-            print(f"[WINDOW] Sprite updated: {pixmap.width()}x{pixmap.height()}")
+            # print(f"[WINDOW] Sprite updated: {pixmap.width()}x{pixmap.height()}")
 
     def update_position(self, x, y):
         """Update window position.

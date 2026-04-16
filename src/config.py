@@ -15,7 +15,10 @@ class Config:
         "sprite_size": 64,
         "window_bottom_offset": 50,
         "trace_file_path": "trace/query_events.jsonl",
-        "trace_poll_interval_ms": 500
+        "trace_poll_interval_ms": 500,
+        "action_detection_mode": "hybrid",
+        "timing_threshold_sec": 2.0,
+        "debug_action_detection": False
     }
 
     def __init__(self, config_file="config.json"):

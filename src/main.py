@@ -212,6 +212,10 @@ def main():
     state_manager.fade_away_triggered.connect(animator.start_fade_away)
     animator.animation_sequence_complete.connect(state_manager.on_fade_away_complete)
 
+    # Action needed signals (waving animation)
+    activity_monitor.action_needed_started.connect(animator.start_waving)
+    activity_monitor.action_needed_stopped.connect(animator.stop_waving)
+
     print("[MAIN] All signals connected")
 
     # Start activity monitor thread

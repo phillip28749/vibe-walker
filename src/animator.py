@@ -42,6 +42,7 @@ class Animator(QObject):
         self.sequence_frames = []
         self.sequence_current_frame = 0
         self.sequence_completion_callback = None
+        self.should_loop_waving = False  # Flag to control waving loop
         self.sequence_timer = QTimer()
         self.sequence_timer.timeout.connect(self._play_sequence_frame)
 
@@ -49,6 +50,7 @@ class Animator(QObject):
         self.sprites = {}
         self.climb_out_sequence = []
         self.fade_away_sequence = []
+        self.waving_sequence = []
         self._load_sprites()
 
         # Animation timer
@@ -56,6 +58,50 @@ class Animator(QObject):
         frame_interval_ms = 1000 // config.animation_fps
         self.animation_timer.setInterval(frame_interval_ms)
         self.animation_timer.timeout.connect(self._animate)
+
+    def _load_sprite_sheet(self, sheet_path, frame_width, frame_height, num_frames, scale_to_size=None):
+        """Load frames from a horizontal sprite sheet.
+
+        Args:
+            sheet_path: Path to sprite sheet image
+            frame_width: Width of each frame in the sheet
+            frame_height: Height of each frame in the sheet
+            num_frames: Number of frames in the sheet
+            scale_to_size: Optional size to scale frames to (width, height)
+
+        Returns:
+            List of QPixmap frames
+        """
+        frames = []
+
+        if not os.path.exists(sheet_path):
+            print(f"[ERROR] Sprite sheet not found: {sheet_path}")
+            return frames
+
+        sheet = QPixmap(sheet_path)
+        if sheet.isNull():
+            print(f"[ERROR] Failed to load sprite sheet: {sheet_path}")
+            return frames
+
+        # Extract each frame
+        for i in range(num_frames):
+            x = i * frame_width
+            frame = sheet.copy(x, 0, frame_width, frame_height)
+
+            # Scale frame if requested
+            if scale_to_size:
+                frame = frame.scaled(
+                    scale_to_size[0],
+                    scale_to_size[1],
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+
+            frames.append(frame)
+
+        size_info = f" (scaled to {scale_to_size[0]}x{scale_to_size[1]})" if scale_to_size else ""
+        print(f"[ANIMATOR] Loaded {len(frames)} frames from sprite sheet: {os.path.basename(sheet_path)}{size_info}")
+        return frames
 
     def _load_sprites(self):
         """Load all sprite images and animation sequences."""
@@ -99,6 +145,32 @@ class Animator(QObject):
             if not pixmap.isNull():
                 self.fade_away_sequence.append(pixmap)
         print(f"[ANIMATOR] Loaded {len(self.fade_away_sequence)} fade_away frames")
+
+        # Load waving sequence from sprite sheet
+        # Always divide into 8 horizontal frames regardless of image dimensions
+        waving_sheet_path = os.path.join(sprites_dir, 'waving', 'waving_w.png')
+        if os.path.exists(waving_sheet_path):
+            # Load the sprite sheet to get its actual dimensions
+            temp_sheet = QPixmap(waving_sheet_path)
+            if not temp_sheet.isNull():
+                sheet_width = temp_sheet.width()
+                sheet_height = temp_sheet.height()
+                frame_width = sheet_width // 8  # Always divide into 8 horizontal frames
+                frame_height = sheet_height  # Use full height
+
+                print(f"[ANIMATOR] Waving spritesheet: {sheet_width}x{sheet_height}, each frame: {frame_width}x{frame_height}")
+
+                self.waving_sequence = self._load_sprite_sheet(
+                    waving_sheet_path,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                    num_frames=8,
+                    scale_to_size=(self.config.sprite_size, self.config.sprite_size)
+                )
+            else:
+                print(f"[ERROR] Failed to load waving sprite sheet: {waving_sheet_path}")
+        else:
+            print(f"[WARNING] Waving sprite sheet not found: {waving_sheet_path}")
 
         # Create fallback sprite if loading failed
         if not self.sprites:
@@ -163,14 +235,21 @@ class Animator(QObject):
 
         # Check if sequence is complete
         if self.sequence_current_frame >= len(self.sequence_frames):
-            self.sequence_timer.stop()
-            self.is_playing_sequence = False
-            print("[ANIMATOR] Sequence complete")
+            # If looping waving animation, restart from frame 0
+            if self.should_loop_waving:
+                print("[ANIMATOR] Looping waving animation (restarting from frame 1)")
+                self.sequence_current_frame = 0  # Reset to first frame
+                # Continue playing, don't stop timer
+            else:
+                # Normal sequence completion
+                self.sequence_timer.stop()
+                self.is_playing_sequence = False
+                print("[ANIMATOR] Sequence complete")
 
-            # Call completion callback if provided
-            if self.sequence_completion_callback:
-                self.sequence_completion_callback()
-                self.sequence_completion_callback = None
+                # Call completion callback if provided
+                if self.sequence_completion_callback:
+                    self.sequence_completion_callback()
+                    self.sequence_completion_callback = None
 
     def start_climb_out(self):
         """Start climb out animation sequence."""
@@ -213,6 +292,45 @@ class Animator(QObject):
         """Called when fade away sequence completes."""
         print("[ANIMATOR] Fade away complete")
         self.animation_sequence_complete.emit()
+
+    def start_waving(self):
+        """Start waving animation sequence (loops until stopped)."""
+        if self.waving_sequence:
+            print("[ANIMATOR] Starting waving animation (action needed)")
+            self.should_loop_waving = True  # Enable looping
+            # Stop walking animation
+            if self.animation_timer.isActive():
+                self.animation_timer.stop()
+            self._play_animation_sequence(
+                self.waving_sequence,
+                fps=8,  # 8 FPS for smooth waving
+                on_complete=self._on_waving_loop  # Loop the animation
+            )
+        else:
+            print("[ERROR] No waving sequence loaded")
+
+    def _on_waving_loop(self):
+        """Called when waving sequence completes - loop it."""
+        # Keep looping waving animation until action is handled
+        if self.should_loop_waving:
+            print("[ANIMATOR] Looping waving animation (restarting from frame 0)")
+            self._play_animation_sequence(
+                self.waving_sequence,
+                fps=8,
+                on_complete=self._on_waving_loop
+            )
+
+    def stop_waving(self):
+        """Stop waving animation and resume previous state."""
+        self.should_loop_waving = False  # Disable looping
+        if self.is_playing_sequence:
+            self.sequence_timer.stop()
+            self.is_playing_sequence = False
+            print("[ANIMATOR] Waving stopped - resuming walking")
+        # Resume walking animation
+        if self.current_state in [CharacterState.WALKING_RIGHT, CharacterState.WALKING_LEFT]:
+            if not self.animation_timer.isActive():
+                self.animation_timer.start()
 
     def on_state_changed(self, new_state):
         """Handle state changes.
