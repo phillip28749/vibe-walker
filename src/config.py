@@ -16,6 +16,11 @@ class Config:
         "window_bottom_offset": 50,
         "trace_file_path": "trace/query_events.jsonl",
         "trace_poll_interval_ms": 500,
+        "random_spawn_enabled": True,
+        "reactive_mode_enabled": True,
+        "baseline_y_offset": 50,
+        "drop_duration_ms": 500,
+        "pygame_fps": 60,
         "action_detection_mode": "hybrid",
         "timing_threshold_sec": 2.0,
         "debug_action_detection": False,
@@ -127,6 +132,31 @@ class Config:
     def random_spawn_enabled(self):
         """Get whether random spawn position is enabled."""
         return self.config.get("random_spawn_enabled", True)
+
+    @property
+    def reactive_mode_enabled(self):
+        """Get whether reactive mode is enabled."""
+        return self.config.get("reactive_mode_enabled", True)
+
+    @reactive_mode_enabled.setter
+    def reactive_mode_enabled(self, value):
+        """Set whether reactive mode is enabled."""
+        self.config["reactive_mode_enabled"] = value
+
+    @property
+    def baseline_y_offset(self):
+        """Get baseline Y offset in pixels."""
+        return self.config.get("baseline_y_offset", 50)
+
+    @property
+    def drop_duration_ms(self):
+        """Get drop animation duration in milliseconds."""
+        return self.config.get("drop_duration_ms", 500)
+
+    @property
+    def pygame_fps(self):
+        """Get Pygame rendering loop frame rate."""
+        return self.config.get("pygame_fps", 60)
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.

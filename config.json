@@ -7,5 +7,9 @@
   "window_bottom_offset": 50,
   "trace_file_path": "trace/query_events.jsonl",
   "trace_poll_interval_ms": 500,
-  "random_spawn_enabled": true
+  "random_spawn_enabled": true,
+  "reactive_mode_enabled": true,
+  "baseline_y_offset": 50,
+  "drop_duration_ms": 500,
+  "pygame_fps": 60
 }
