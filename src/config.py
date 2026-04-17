@@ -56,6 +56,15 @@ class Config:
             print(f"[ERROR] Failed to load config: {e}")
             print("[WARNING] Using default configuration")
 
+    def save(self):
+        """Save current configuration to JSON file."""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+            print(f"[OK] Saved configuration to '{self.config_file}'")
+        except Exception as e:
+            print(f"[ERROR] Failed to save config: {e}")
+
     def get(self, key, default=None):
         """Get configuration value.
 
