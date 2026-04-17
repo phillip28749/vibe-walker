@@ -241,3 +241,9 @@ class GameWindow(QMainWindow):
             self.hide()
         else:
             self.show()
+
+    def closeEvent(self, event):
+        """Clean up resources before window closes"""
+        self.timer.stop()
+        pygame.quit()
+        event.accept()
