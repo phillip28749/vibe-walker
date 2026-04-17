@@ -1,0 +1,49 @@
+import pytest
+import pygame
+from PyQt5.QtCore import QObject, pyqtSignal
+from src.activity_bridge import ActivityBridge, CLAUDE_STARTED, CLAUDE_STOPPED
+
+
+class MockActivityMonitor(QObject):
+    """Mock activity monitor for testing"""
+    activity_started = pyqtSignal()
+    activity_stopped = pyqtSignal()
+
+
+@pytest.fixture(scope="module")
+def pygame_init():
+    pygame.init()
+    yield
+    pygame.quit()
+
+
+def test_activity_started_posts_pygame_event(qtbot, pygame_init):
+    """Activity started signal posts CLAUDE_STARTED event"""
+    monitor = MockActivityMonitor()
+    bridge = ActivityBridge(monitor)
+
+    # Clear event queue
+    pygame.event.clear()
+
+    # Emit signal
+    monitor.activity_started.emit()
+
+    # Process Qt events
+    qtbot.wait(10)
+
+    # Check Pygame event queue
+    events = pygame.event.get(CLAUDE_STARTED)
+    assert len(events) == 1
+
+
+def test_activity_stopped_posts_pygame_event(qtbot, pygame_init):
+    """Activity stopped signal posts CLAUDE_STOPPED event"""
+    monitor = MockActivityMonitor()
+    bridge = ActivityBridge(monitor)
+
+    pygame.event.clear()
+    monitor.activity_stopped.emit()
+    qtbot.wait(10)
+
+    events = pygame.event.get(CLAUDE_STOPPED)
+    assert len(events) == 1
