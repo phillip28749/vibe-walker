@@ -1,7 +1,7 @@
 import pytest
 import pygame
 from PyQt5.QtCore import QObject, pyqtSignal
-from src.activity_bridge import ActivityBridge, CLAUDE_STARTED, CLAUDE_STOPPED
+from src.activity_bridge import ActivityBridge, CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION
 
 
 class MockActivityMonitor(QObject):
@@ -46,4 +46,20 @@ def test_activity_stopped_posts_pygame_event(qtbot, pygame_init):
     qtbot.wait(10)
 
     events = pygame.event.get(CLAUDE_STOPPED)
+    assert len(events) == 1
+
+
+def test_post_show_minion_static_method(pygame_init):
+    """Static method posts SHOW_MINION event"""
+    pygame.event.clear()
+    ActivityBridge.post_show_minion()
+    events = pygame.event.get(SHOW_MINION)
+    assert len(events) == 1
+
+
+def test_post_hide_minion_static_method(pygame_init):
+    """Static method posts HIDE_MINION event"""
+    pygame.event.clear()
+    ActivityBridge.post_hide_minion()
+    events = pygame.event.get(HIDE_MINION)
     assert len(events) == 1
