@@ -65,17 +65,26 @@ class CharacterSprite(pygame.sprite.Sprite):
         return pygame.transform.scale(image, (self.sprite_size, self.sprite_size))
 
     def update_state(self, state):
-        """Update sprite based on state"""
+        """Update sprite based on state
+
+        Args:
+            state: State enum member
+        """
         self.current_state = state
 
         if state == State.IDLE:
             self.image = self.images[State.IDLE]
-        elif state == State.DRAGGED:
+        elif state == State.DRAGGED or state == State.DROPPING:
+            # Both dragged and dropping use the dragged sprite
             self.image = self.images[State.DRAGGED]
         elif state == State.WALKING:
             # Animate walking
             direction = "right" if self.walk_direction > 0 else "left"
             self.image = self.images[State.WALKING][direction][self.walk_frame]
+        elif state == State.HIDDEN:
+            # For HIDDEN state, use transparent surface or clear image
+            # For now, keep last image (window will be hidden by game window)
+            pass
 
     def update_walk_frame(self):
         """Advance walking animation frame"""
