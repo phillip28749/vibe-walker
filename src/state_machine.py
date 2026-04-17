@@ -25,7 +25,17 @@ class StateMachine(QObject):
         return self._current_state
 
     def transition_to(self, new_state):
-        """Transition to a new state"""
+        """Transition to a new state
+
+        Args:
+            new_state: State enum member to transition to
+
+        Raises:
+            TypeError: If new_state is not a State enum member
+        """
+        if not isinstance(new_state, State):
+            raise TypeError(f"new_state must be a State enum, got {type(new_state).__name__}")
+
         if new_state == self._current_state:
             return
 

@@ -40,3 +40,33 @@ def test_no_signal_on_same_state(qtbot):
     # Should not emit signal
     with qtbot.assertNotEmitted(sm.state_changed):
         sm.transition_to(State.IDLE)
+
+
+def test_invalid_state_raises_error():
+    """Attempting to transition to invalid state raises TypeError"""
+    sm = StateMachine()
+    with pytest.raises(TypeError):
+        sm.transition_to("INVALID")
+    with pytest.raises(TypeError):
+        sm.transition_to(None)
+
+
+def test_multiple_state_transitions(qtbot):
+    """Can transition through multiple states sequentially"""
+    sm = StateMachine()
+
+    # HIDDEN -> IDLE -> WALKING -> DRAGGED -> DROPPING -> IDLE
+    sm.transition_to(State.IDLE)
+    assert sm.current_state == State.IDLE
+
+    sm.transition_to(State.WALKING)
+    assert sm.current_state == State.WALKING
+
+    sm.transition_to(State.DRAGGED)
+    assert sm.current_state == State.DRAGGED
+
+    sm.transition_to(State.DROPPING)
+    assert sm.current_state == State.DROPPING
+
+    sm.transition_to(State.IDLE)
+    assert sm.current_state == State.IDLE
