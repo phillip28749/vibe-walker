@@ -3,16 +3,38 @@
 ![Vibe Walker Wallpaper](wallpaper/wall%20paper.png)
 </div>
 
-A fun Windows desktop app featuring a tiny pixel assistant that keeps track and lets you know when your Claude Code has finished running.
+A fun Windows desktop app featuring an interactive pixel assistant that responds to Claude Code activity.
 
-> **✨ NEW:** Fully automated setup! Just `pip install -r requirements.txt` then `python src/main.py` - it handles everything else.
+> **✨ POC Release:** Interactive Desktop Pet with drag-and-drop, system tray control, and hybrid reactive/independent modes!
 
-## Features
+## POC Features (Interactive Desktop Pet)
+
+### New in POC
+- **Draggable Character**: Click and drag the minion anywhere on screen
+- **Gravity Physics**: Released minion drops smoothly back to baseline height
+- **System Tray Control**: Always-running app with reactive mode toggle
+- **Hybrid Modes**: 
+  - **Reactive Mode ON**: Minion visible, walks when Claude Code is active, idles when not
+  - **Reactive Mode OFF**: Minion hidden
+- **Interactive States**: HIDDEN, IDLE, WALKING, DRAGGED, DROPPING
+
+### Controls
+- **Left Click + Drag**: Pick up and move the minion
+- **System Tray Right-Click**: Toggle reactive mode or exit
+- **Reactive Mode ON**: Minion walks when Claude Code is active, idles when not
+- **Reactive Mode OFF**: Minion disappears
+
+### Architecture
+- **Pygame**: Sprite rendering, drag-and-drop physics, 60 FPS animation
+- **PyQt5**: System tray, window management, Qt-Pygame integration
+- **Hybrid Design**: Leverages strengths of both frameworks
+
+## Legacy Features
 
 - **Responsive Character**: Pixel character appears when you send messages to Claude Code
-- **Animated Walking**: Character walks back and forth across the taskbar while Claude processes
-- **Idle Behavior**: Stops and stands still for 7 seconds after Claude finishes, then disappears
-- **Interrupt Detection**: Automatically detects when you interrupt queries by sending a new message
+- **Animated Walking**: Character walks back and forth across the screen while Claude processes
+- **Idle Behavior**: Stops and stands still after Claude finishes
+- **Interrupt Detection**: Automatically detects when you interrupt queries
 - **Lightweight**: Minimal CPU and memory usage
 - **Customizable**: Configure behavior via JSON file
 
@@ -20,9 +42,11 @@ A fun Windows desktop app featuring a tiny pixel assistant that keeps track and 
 
 - Windows 10 or 11
 - Python 3.8 or higher
-- PyQt5
+- PyQt5 5.15.9
+- Pygame 2.5.2
+- Pillow 10.0.0
 - psutil
-- Pillow
+- pytest (for testing)
 
 ## Quick Start
 
