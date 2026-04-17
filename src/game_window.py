@@ -2,7 +2,7 @@ import os
 import sys
 import pygame
 import random
-from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
+from PyQt5.QtWidgets import QMainWindow, QWidget
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QScreen
 from src.sprite_manager import CharacterSprite
@@ -56,7 +56,7 @@ class GameWindow(QMainWindow):
 
     def _position_at_baseline(self):
         """Position window at baseline with optional random X"""
-        screen = QApplication.primaryScreen().geometry()
+        screen = self.screen().geometry()
 
         if self.config.random_spawn_enabled:
             x = random.randint(0, screen.width() - self.config.sprite_size)
@@ -81,7 +81,7 @@ class GameWindow(QMainWindow):
 
         # Create display surface
         size = self.config.sprite_size
-        self.pygame_screen = pygame.display.set_mode((size, size), pygame.NOFRAME)
+        self.screen = pygame.display.set_mode((size, size), pygame.NOFRAME)
         self.clock = pygame.time.Clock()
 
     def _init_game_objects(self):
@@ -132,8 +132,8 @@ class GameWindow(QMainWindow):
         self._update_physics()
 
         # Render
-        self.pygame_screen.fill((0, 0, 0, 0))  # Transparent
-        self.sprite_group.draw(self.pygame_screen)
+        self.screen.fill((0, 0, 0, 0))  # Transparent
+        self.sprite_group.draw(self.screen)
         pygame.display.flip()
 
         # Maintain framerate
@@ -198,7 +198,7 @@ class GameWindow(QMainWindow):
             self.sprite.rect.x += self.walk_direction * self.config.movement_speed_px
 
             # Check screen edges
-            screen = QApplication.primaryScreen().geometry()
+            screen = self.screen().geometry()
             if self.sprite.rect.x <= 0:
                 self.walk_direction = 1
                 self.sprite.set_walk_direction(1)
