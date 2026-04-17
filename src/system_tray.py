@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QObject, pyqtSignal
-from src.activity_bridge import ActivityBridge
+from activity_bridge import ActivityBridge
 
 
 class SystemTray(QObject):

@@ -1,6 +1,6 @@
 import pygame
 import os
-from src.state_machine import State
+from state_machine import State
 
 
 class CharacterSprite(pygame.sprite.Sprite):

@@ -1,5 +1,5 @@
 import pygame
-from src.state_machine import State
+from state_machine import State
 
 
 class DragHandler:
