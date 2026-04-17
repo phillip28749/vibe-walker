@@ -5,10 +5,10 @@ import random
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QScreen
-from sprite_manager import CharacterSprite
-from state_machine import State, StateMachine
-from drag_handler import DragHandler
-from activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION
+from src.sprite_manager import CharacterSprite
+from src.state_machine import State, StateMachine
+from src.drag_handler import DragHandler
+from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION
 
 
 class GameWindow(QMainWindow):

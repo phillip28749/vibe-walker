@@ -6,12 +6,12 @@ Main entry point
 
 import sys
 from PyQt5.QtWidgets import QApplication
-from config import Config
-from state_machine import State, StateMachine
-from activity_monitor import ActivityMonitor
-from activity_bridge import ActivityBridge
-from game_window import GameWindow
-from system_tray import SystemTray
+from src.config import Config
+from src.state_machine import State, StateMachine
+from src.activity_monitor import ActivityMonitor
+from src.activity_bridge import ActivityBridge
+from src.game_window import GameWindow
+from src.system_tray import SystemTray
 
 
 def main():
