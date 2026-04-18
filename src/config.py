@@ -25,7 +25,8 @@ class Config:
         "timing_threshold_sec": 2.0,
         "debug_action_detection": False,
         "permission_timeout_sec": 60,  # Timeout for permission dialogs
-        "action_timeout_sec": 30       # Timeout for other actions
+        "action_timeout_sec": 30,      # Timeout for other actions
+        "behavior_mode": "claude"      # Behavior mode: "claude" or "pet"
     }
 
     def __init__(self, config_file="config.json"):
@@ -171,6 +172,18 @@ class Config:
     def dragged_animation_enabled(self):
         """Get whether dragged sprite animation is enabled."""
         return self.config.get("dragged_animation_enabled", True)
+
+    @property
+    def behavior_mode(self):
+        """Get current behavior mode ('claude' or 'pet')."""
+        return self.config.get("behavior_mode", "claude")
+
+    @behavior_mode.setter
+    def behavior_mode(self, value):
+        """Set behavior mode."""
+        if value not in ["claude", "pet"]:
+            raise ValueError(f"Invalid behavior mode: {value}")
+        self.config["behavior_mode"] = value
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.

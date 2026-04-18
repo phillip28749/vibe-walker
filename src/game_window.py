@@ -148,6 +148,20 @@ class GameWindow(QMainWindow):
         self.pending_actions_count = 0  # Count of pending actions requiring user input
         self.state_before_waving = None  # Store state to return to after waving
 
+        # Behavior mode tracking
+        self.behavior_mode = self.config.behavior_mode
+        print(f"[GAME] Behavior mode: {self.behavior_mode}")
+
+        # Pet mode state
+        self.pet_mode_timer = None
+        self.pet_mode_state_duration = 0
+        self.pet_mode_state_elapsed = 0
+        self.pet_mode_target_state = State.IDLE
+
+        # Start pet mode if configured
+        if self.behavior_mode == "pet":
+            self._start_pet_mode()
+
     def _start_game_loop(self):
         """Start Pygame update loop via QTimer"""
         self.timer = QTimer()
@@ -187,14 +201,16 @@ class GameWindow(QMainWindow):
         if event.type == CLAUDE_STARTED:
             print("[GAME] Received CLAUDE_STARTED event")
             self.claude_active = True
-            if self.state_machine.current_state in [State.IDLE, State.WALKING]:
-                self.state_machine.transition_to(State.WALKING)
+            if self.behavior_mode == "claude":  # Only respond in claude mode
+                if self.state_machine.current_state in [State.IDLE, State.WALKING]:
+                    self.state_machine.transition_to(State.WALKING)
 
         elif event.type == CLAUDE_STOPPED:
             print("[GAME] Received CLAUDE_STOPPED event")
             self.claude_active = False
-            if self.state_machine.current_state == State.WALKING:
-                self.state_machine.transition_to(State.IDLE)
+            if self.behavior_mode == "claude":  # Only respond in claude mode
+                if self.state_machine.current_state == State.WALKING:
+                    self.state_machine.transition_to(State.IDLE)
 
         elif event.type == SHOW_MINION:
             # Show with appearing animation
@@ -233,10 +249,14 @@ class GameWindow(QMainWindow):
                     self.state_machine.transition_to(State.IDLE)
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            # Store where in the window they clicked
-            self.drag_start_offset_x = event.pos[0]
-            self.drag_start_offset_y = event.pos[1]
-            self.state_machine.transition_to(State.DRAGGED)
+            if event.button == 1:  # Left click - drag
+                # Store where in the window they clicked
+                self.drag_start_offset_x = event.pos[0]
+                self.drag_start_offset_y = event.pos[1]
+                self.state_machine.transition_to(State.DRAGGED)
+            elif event.button == 3:  # Right click - context menu
+                print(f"[GAME] Right-click detected at pygame pos: {event.pos}")
+                self._show_context_menu()
 
         elif event.type == pygame.MOUSEMOTION:
             # Mouse motion events handled in _update_drag() for smoother tracking
@@ -386,8 +406,166 @@ class GameWindow(QMainWindow):
             print("[GAME] Showing window")
             self.show()
 
+    def _show_context_menu(self):
+        """Show right-click context menu for behavior mode selection"""
+        from PyQt5.QtWidgets import QMenu, QAction
+        from PyQt5.QtGui import QCursor
+        from PyQt5.QtCore import QPoint
+
+        print("[GAME] Creating context menu...")
+
+        # Get window position
+        window_pos = self.pos()
+        print(f"[GAME] Window position: {window_pos.x()}, {window_pos.y()}")
+
+        # Calculate menu position above the sprite (centered horizontally, above vertically)
+        menu_x = window_pos.x() + self.window_size // 2
+        menu_y = window_pos.y() - 80  # 80 pixels above the sprite
+        menu_pos = QPoint(menu_x, menu_y)
+        print(f"[GAME] Menu will appear at: {menu_x}, {menu_y}")
+
+        # Create menu with self as parent for proper window hierarchy
+        menu = QMenu(self)
+
+        # Ensure menu appears on top with proper window flags
+        menu.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.NoDropShadowWindowHint)
+
+        # Add stylesheet to make menu visible with proper background
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: white;
+                border: 1px solid #999999;
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QMenu::item {
+                background-color: transparent;
+                padding: 5px 25px 5px 25px;
+                border-radius: 2px;
+            }
+            QMenu::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QMenu::item:checked {
+                font-weight: bold;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #cccccc;
+                margin: 5px 10px;
+            }
+        """)
+        print("[GAME] Menu stylesheet applied")
+
+        # Pet mode option
+        pet_action = QAction("Pet mode (random walking)", menu)
+        pet_action.setCheckable(True)
+        pet_action.setChecked(self.behavior_mode == "pet")
+        pet_action.triggered.connect(lambda: self.set_behavior_mode("pet"))
+        menu.addAction(pet_action)
+
+        # Claude mode option
+        claude_action = QAction("Claude mode (activity-driven)", menu)
+        claude_action.setCheckable(True)
+        claude_action.setChecked(self.behavior_mode == "claude")
+        claude_action.triggered.connect(lambda: self.set_behavior_mode("claude"))
+        menu.addAction(claude_action)
+
+        menu.addSeparator()
+
+        # Remove option
+        remove_action = QAction("Remove minion", menu)
+        remove_action.triggered.connect(self.remove_instance)
+        menu.addAction(remove_action)
+
+        # Show menu using popup above the sprite
+        print("[GAME] Showing menu above sprite...")
+        menu.popup(menu_pos)
+        menu.raise_()  # Ensure menu appears on top
+        menu.activateWindow()  # Give menu focus
+        print("[GAME] Menu popup called")
+
+    def set_behavior_mode(self, mode):
+        """Switch behavior mode between pet and claude"""
+        print(f"[GAME] Switching to {mode} mode")
+        self.behavior_mode = mode
+        self.config.behavior_mode = mode
+        self.config.save()
+
+        if mode == "pet":
+            self._start_pet_mode()
+        else:  # claude mode
+            self._stop_pet_mode()
+            # Return to appropriate state based on current Claude activity
+            if self.state_machine.current_state in [State.IDLE, State.WALKING]:
+                if self.claude_active:
+                    self.state_machine.transition_to(State.WALKING)
+                else:
+                    self.state_machine.transition_to(State.IDLE)
+
+    def _start_pet_mode(self):
+        """Start pet mode with random walking/idle behavior"""
+        print("[GAME] Starting pet mode")
+        if self.pet_mode_timer:
+            self.pet_mode_timer.stop()
+
+        self.pet_mode_timer = QTimer()
+        self.pet_mode_timer.timeout.connect(self._update_pet_mode)
+        self.pet_mode_timer.start(100)  # 10Hz update
+        self._choose_next_pet_state()
+
+    def _stop_pet_mode(self):
+        """Stop pet mode timer"""
+        print("[GAME] Stopping pet mode")
+        if self.pet_mode_timer:
+            self.pet_mode_timer.stop()
+            self.pet_mode_timer = None
+
+    def _choose_next_pet_state(self):
+        """Randomly choose next state and duration"""
+        import random
+
+        # 60% walking, 40% idle
+        if random.random() < 0.6:
+            self.pet_mode_target_state = State.WALKING
+            self.walk_direction = random.choice([-1, 1])
+            self.sprite.set_walk_direction(self.walk_direction)
+            self.pet_mode_state_duration = random.uniform(2.0, 8.0)  # Walk 2-8 seconds
+        else:
+            self.pet_mode_target_state = State.IDLE
+            self.pet_mode_state_duration = random.uniform(1.0, 5.0)  # Idle 1-5 seconds
+
+        self.pet_mode_state_elapsed = 0
+        self.state_machine.transition_to(self.pet_mode_target_state)
+        print(f"[PET MODE] Switching to {self.pet_mode_target_state.name} for {self.pet_mode_state_duration:.1f}s")
+
+    def _update_pet_mode(self):
+        """Update pet mode state machine (called every 100ms)"""
+        if self.behavior_mode != "pet":
+            return
+
+        # Don't interfere with drag/drop/waving
+        if self.state_machine.current_state in [State.DRAGGED, State.DROPPING, State.WAVING]:
+            return
+
+        # Update timer
+        self.pet_mode_state_elapsed += 0.1
+
+        # Switch states when duration expires
+        if self.pet_mode_state_elapsed >= self.pet_mode_state_duration:
+            self._choose_next_pet_state()
+
+    def remove_instance(self):
+        """Handle remove minion - close the application"""
+        print("[GAME] Remove minion requested - closing application")
+        # Direct quit without confirmation to avoid hanging the pygame/Qt event loop
+        QApplication.quit()
+
     def closeEvent(self, event):
         """Clean up resources before window closes"""
         self.timer.stop()
+        if self.pet_mode_timer:
+            self.pet_mode_timer.stop()
         pygame.quit()
         event.accept()

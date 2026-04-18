@@ -12,5 +12,11 @@
   "baseline_y_offset": 50,
   "drop_duration_ms": 800,
   "pygame_fps": 60,
+  "action_detection_mode": "hybrid",
+  "timing_threshold_sec": 2.0,
+  "debug_action_detection": false,
+  "permission_timeout_sec": 60,
+  "action_timeout_sec": 30,
+  "behavior_mode": "claude",
   "dragged_animation_enabled": false
 }
