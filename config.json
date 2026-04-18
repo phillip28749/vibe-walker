@@ -10,6 +10,6 @@
   "random_spawn_enabled": true,
   "reactive_mode_enabled": true,
   "baseline_y_offset": 50,
-  "drop_duration_ms": 500,
+  "drop_duration_ms": 800,
   "pygame_fps": 60
 }

@@ -4,7 +4,7 @@ import pygame
 import random
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
 from PyQt5.QtCore import Qt, QTimer, QRect
-from PyQt5.QtGui import QScreen
+from PyQt5.QtGui import QScreen, QImage, QPixmap, QRegion, QBitmap
 from src.sprite_manager import CharacterSprite
 from src.state_machine import State, StateMachine
 from src.drag_handler import DragHandler
@@ -19,17 +19,23 @@ class GameWindow(QMainWindow):
         self.config = config
         self.state_machine = state_machine
 
+        print("[GAME] Initializing game window...")
+
         # Setup window
         self._setup_window()
+        print("[GAME] Window setup complete")
 
         # Embed Pygame
         self._setup_pygame()
+        print("[GAME] Pygame initialized")
 
         # Initialize game objects
         self._init_game_objects()
+        print("[GAME] Game objects initialized")
 
         # Start game loop
         self._start_game_loop()
+        print("[GAME] Game loop started")
 
     def _setup_window(self):
         """Configure PyQt5 window properties"""
@@ -39,17 +45,19 @@ class GameWindow(QMainWindow):
             Qt.WindowStaysOnTopHint |
             Qt.Tool
         )
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_NoSystemBackground)
+        # Transparency disabled - embedded pygame + Qt transparency is problematic on Windows
 
-        # Set fixed size
-        size = self.config.sprite_size
+        # Set fixed size - slightly larger for visibility
+        size = 80  # A bit bigger than sprite_size
         self.setFixedSize(size, size)
 
         # Create container widget for Pygame
         self.embed = QWidget(self)
         self.embed.setGeometry(0, 0, size, size)
         self.setCentralWidget(self.embed)
+
+        # Store size for pygame setup
+        self.window_size = size
 
         # Position at baseline
         self._position_at_baseline()
@@ -58,16 +66,21 @@ class GameWindow(QMainWindow):
         """Position window at baseline with optional random X"""
         screen = QApplication.primaryScreen().geometry()
 
+        size = self.window_size
+
         if self.config.random_spawn_enabled:
-            x = random.randint(0, screen.width() - self.config.sprite_size)
+            x = random.randint(0, screen.width() - size)
         else:
             x = screen.width() // 2
 
-        y = screen.height() - self.config.baseline_y_offset - self.config.sprite_size
+        y = screen.height() - self.config.baseline_y_offset - size
 
         self.move(x, y)
         self.baseline_y = y
         self.baseline_screen_height = screen.height()
+
+        # Store initial window position for walking
+        self.initial_window_x = x
 
     def _setup_pygame(self):
         """Initialize Pygame surface embedded in Qt widget"""
@@ -79,10 +92,13 @@ class GameWindow(QMainWindow):
         pygame.init()
         pygame.display.init()
 
-        # Create display surface
-        size = self.config.sprite_size
+        # Create display surface - match window size
+        size = self.window_size
         self.pygame_screen = pygame.display.set_mode((size, size), pygame.NOFRAME)
         self.clock = pygame.time.Clock()
+
+        # Set transparent color key (magenta - will be made transparent)
+        self.transparent_color = (255, 0, 255)
 
     def _init_game_objects(self):
         """Initialize sprite, drag handler, etc."""
@@ -93,7 +109,7 @@ class GameWindow(QMainWindow):
         # Create drag handler
         self.drag_handler = DragHandler(
             sprite_size=self.config.sprite_size,
-            baseline_y=0,  # Relative to window
+            baseline_y=self.baseline_y,  # Window's baseline Y position on screen
             drop_duration_ms=self.config.drop_duration_ms
         )
 
@@ -102,9 +118,12 @@ class GameWindow(QMainWindow):
         self.walk_frame_counter = 0
         self.walk_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
 
-        # Position sprite at bottom of window
-        self.sprite.rect.x = 0
-        self.sprite.rect.y = 0
+        # Track window position on screen for walking
+        self.window_x = self.initial_window_x
+
+        # Position sprite centered in window
+        self.sprite.rect.x = (self.window_size - self.config.sprite_size) // 2
+        self.sprite.rect.y = (self.window_size - self.config.sprite_size) // 2
 
         # Connect state machine signals
         self.state_machine.state_changed.connect(self.on_state_changed)
@@ -131,9 +150,13 @@ class GameWindow(QMainWindow):
         # Update drag/drop physics
         self._update_physics()
 
-        # Render
-        self.pygame_screen.fill((0, 0, 0, 0))  # Transparent
+        # Render with transparent color key
+        self.pygame_screen.fill(self.transparent_color)  # Magenta background
         self.sprite_group.draw(self.pygame_screen)
+
+        # Create mask from pygame surface to make magenta pixels transparent
+        self._update_transparency_mask()
+
         pygame.display.flip()
 
         # Maintain framerate
@@ -142,11 +165,13 @@ class GameWindow(QMainWindow):
     def _handle_event(self, event):
         """Handle Pygame events"""
         if event.type == CLAUDE_STARTED:
+            print("[GAME] Received CLAUDE_STARTED event")
             self.claude_active = True
             if self.state_machine.current_state in [State.IDLE, State.WALKING]:
                 self.state_machine.transition_to(State.WALKING)
 
         elif event.type == CLAUDE_STOPPED:
+            print("[GAME] Received CLAUDE_STOPPED event")
             self.claude_active = False
             if self.state_machine.current_state == State.WALKING:
                 self.state_machine.transition_to(State.IDLE)
@@ -160,28 +185,39 @@ class GameWindow(QMainWindow):
             self.hide()
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            result = self.drag_handler.handle_mouse_down(event.pos, self.sprite.rect)
-            if result == State.DRAGGED:
-                self.state_machine.transition_to(State.DRAGGED)
+            # Store where in the window they clicked
+            self.drag_start_offset_x = event.pos[0]
+            self.drag_start_offset_y = event.pos[1]
+            self.state_machine.transition_to(State.DRAGGED)
 
         elif event.type == pygame.MOUSEMOTION:
             if self.state_machine.current_state == State.DRAGGED:
-                new_pos = self.drag_handler.handle_mouse_motion(event.pos)
-                if new_pos:
-                    # Update sprite position within window
-                    self.sprite.rect.x = new_pos[0]
-                    self.sprite.rect.y = new_pos[1]
+                # Get global mouse position
+                from PyQt5.QtGui import QCursor
+                global_pos = QCursor.pos()
 
-                    # Update window position on screen
-                    screen_x = self.x() + new_pos[0]
-                    screen_y = self.y() + new_pos[1]
-                    self.move(screen_x, screen_y)
+                # Calculate where window should be (mouse - offset from where they clicked)
+                screen_x = global_pos.x() - self.drag_start_offset_x
+                screen_y = global_pos.y() - self.drag_start_offset_y
+
+                self.move(screen_x, screen_y)
+                self.window_x = screen_x
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if self.state_machine.current_state == State.DRAGGED:
-                result = self.drag_handler.handle_mouse_up(self.sprite.rect.y)
-                if result == State.DROPPING:
+                # Check if we need to drop (if above baseline)
+                if self.y() < self.baseline_y:
+                    # Start drop animation
+                    self.drag_handler.is_dropping = True
+                    self.drag_handler.drop_start_y = self.y()
+                    self.drag_handler.drop_start_time = pygame.time.get_ticks()
                     self.state_machine.transition_to(State.DROPPING)
+                else:
+                    # Already at or below baseline
+                    if self.claude_active:
+                        self.state_machine.transition_to(State.WALKING)
+                    else:
+                        self.state_machine.transition_to(State.IDLE)
 
     def _update_sprite(self):
         """Update sprite animation based on state"""
@@ -194,20 +230,20 @@ class GameWindow(QMainWindow):
                 self.walk_frame_counter = 0
                 self.sprite.update_walk_frame()
 
-            # Move sprite
-            self.sprite.rect.x += self.walk_direction * self.config.movement_speed_px
+            # Move window position on screen (not the sprite within the window)
+            self.window_x += self.walk_direction * self.config.movement_speed_px
 
             # Check screen edges
             screen = QApplication.primaryScreen().geometry()
-            if self.sprite.rect.x <= 0:
+            if self.window_x <= 0:
                 self.walk_direction = 1
                 self.sprite.set_walk_direction(1)
-            elif self.sprite.rect.x >= screen.width() - self.config.sprite_size:
+            elif self.window_x >= screen.width() - self.window_size:
                 self.walk_direction = -1
                 self.sprite.set_walk_direction(-1)
 
-            # Update window position
-            self.move(self.sprite.rect.x, self.baseline_y)
+            # Update window position (sprite stays centered in window)
+            self.move(self.window_x, self.baseline_y)
 
         # Update sprite image
         self.sprite.update_state(state)
@@ -218,16 +254,12 @@ class GameWindow(QMainWindow):
             current_time = pygame.time.get_ticks()
             y, is_complete = self.drag_handler.update_drop(current_time)
 
-            # Update sprite Y position
-            self.sprite.rect.y = y
-
-            # Update window Y position
-            self.move(self.sprite.rect.x, self.baseline_y + y)
+            # Update window Y position (sprite stays centered in window)
+            self.move(self.window_x, y)
 
             if is_complete:
                 # Drop complete, return to baseline
-                self.sprite.rect.y = 0
-                self.move(self.sprite.rect.x, self.baseline_y)
+                self.move(self.window_x, self.baseline_y)
 
                 # Transition to idle or walking based on Claude state
                 if self.claude_active:
@@ -235,11 +267,42 @@ class GameWindow(QMainWindow):
                 else:
                     self.state_machine.transition_to(State.IDLE)
 
+    def _update_transparency_mask(self):
+        """Update window mask to make transparent color invisible"""
+        # Get pygame surface data
+        surf_data = pygame.image.tostring(self.pygame_screen, 'RGB')
+
+        # Create QImage from pygame surface
+        img = QImage(surf_data, self.window_size, self.window_size, QImage.Format_RGB888)
+
+        # Create mask: pixels matching transparent_color become transparent
+        mask = QBitmap(self.window_size, self.window_size)
+        mask.fill(Qt.color0)  # Start with all transparent
+
+        # Paint non-transparent pixels
+        from PyQt5.QtGui import QPainter, QColor
+        painter = QPainter(mask)
+        for y in range(self.window_size):
+            for x in range(self.window_size):
+                pixel = img.pixel(x, y)
+                color = QColor(pixel)
+                # If not magenta, mark as visible
+                if not (color.red() == 255 and color.green() == 0 and color.blue() == 255):
+                    painter.setPen(Qt.color1)
+                    painter.drawPoint(x, y)
+        painter.end()
+
+        # Apply mask to window
+        self.setMask(mask)
+
     def on_state_changed(self, new_state):
         """Handle state changes"""
+        print(f"[GAME] State changed to: {new_state}")
         if new_state == State.HIDDEN:
+            print("[GAME] Hiding window")
             self.hide()
         else:
+            print("[GAME] Showing window")
             self.show()
 
     def closeEvent(self, event):
