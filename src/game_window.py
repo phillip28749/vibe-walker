@@ -596,8 +596,10 @@ class GameWindow(QMainWindow):
     def remove_instance(self):
         """Handle remove minion - close the application"""
         print("[GAME] Remove minion requested - closing application")
-        # Direct quit without confirmation to avoid hanging the pygame/Qt event loop
+        # Close the window, which triggers closeEvent for proper cleanup
+        self.close()
         QApplication.quit()
+        sys.exit(0)
 
     def closeEvent(self, event):
         """Clean up resources before window closes"""
