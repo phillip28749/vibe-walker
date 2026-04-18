@@ -9,6 +9,8 @@ class State(Enum):
     WALKING = auto()
     DRAGGED = auto()
     DROPPING = auto()
+    WAVING = auto()
+    APPEARING = auto()
 
 
 class StateMachine(QObject):

@@ -15,6 +15,8 @@ class CharacterSprite(pygame.sprite.Sprite):
         self.walk_frame = 0
         self.walk_direction = 1  # 1 = right, -1 = left
         self.dragged_frame = 0  # Frame for dragged animation
+        self.waving_frame = 0  # Frame for waving animation
+        self.appearing_frame = 0  # Frame for appearing animation
 
         # Load sprite images
         self._load_images()
@@ -42,6 +44,24 @@ class CharacterSprite(pygame.sprite.Sprite):
                 self._load_sprite(os.path.join(sprite_dir, "walk_right_2.png"))
             ]
         }
+
+        # Load waving animation
+        waving_sheet_path = os.path.join(sprite_dir, "waving", "waving_w.png")
+        if os.path.exists(waving_sheet_path):
+            self.images[State.WAVING] = self._load_sprite_sheet(waving_sheet_path, frames=8)
+        else:
+            self.images[State.WAVING] = [self.images[State.IDLE]]
+
+        # Load appearing/climb_out animation
+        appearing_frames = []
+        for i in range(8):
+            frame_path = os.path.join(sprite_dir, "climb_out", f"frame_{i:02d}.png")
+            if os.path.exists(frame_path):
+                appearing_frames.append(self._load_sprite(frame_path))
+        if appearing_frames:
+            self.images[State.APPEARING] = appearing_frames
+        else:
+            self.images[State.APPEARING] = [self.images[State.IDLE]]
 
         # Load dragged sprite (animated or static based on config)
         if self.use_dragged_animation:
@@ -128,6 +148,12 @@ class CharacterSprite(pygame.sprite.Sprite):
             # Animate walking
             direction = "right" if self.walk_direction > 0 else "left"
             self.image = self.images[State.WALKING][direction][self.walk_frame]
+        elif state == State.WAVING:
+            # Animate waving
+            self.image = self.images[State.WAVING][self.waving_frame]
+        elif state == State.APPEARING:
+            # Animate appearing/climb out
+            self.image = self.images[State.APPEARING][self.appearing_frame]
         elif state == State.HIDDEN:
             # For HIDDEN state, use transparent surface or clear image
             # For now, keep last image (window will be hidden by game window)
@@ -141,6 +167,22 @@ class CharacterSprite(pygame.sprite.Sprite):
         """Advance dragged animation frame"""
         num_frames = len(self.images[State.DRAGGED])
         self.dragged_frame = (self.dragged_frame + 1) % num_frames
+
+    def update_waving_frame(self):
+        """Advance waving animation frame"""
+        num_frames = len(self.images[State.WAVING])
+        self.waving_frame = (self.waving_frame + 1) % num_frames
+
+    def update_appearing_frame(self):
+        """Advance appearing animation frame"""
+        num_frames = len(self.images[State.APPEARING])
+        old_frame = self.appearing_frame
+        self.appearing_frame = min(self.appearing_frame + 1, num_frames - 1)
+        return self.appearing_frame >= num_frames - 1  # Return True when animation complete
+
+    def reset_appearing_animation(self):
+        """Reset appearing animation to first frame"""
+        self.appearing_frame = 0
 
     def set_walk_direction(self, direction):
         """Set walk direction (1 = right, -1 = left)"""

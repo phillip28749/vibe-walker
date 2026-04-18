@@ -46,8 +46,9 @@ def main():
     # Set initial visibility based on reactive mode
     print(f"[MAIN] Reactive mode enabled: {config.reactive_mode_enabled}")
     if config.reactive_mode_enabled:
-        print("[MAIN] Setting initial state to IDLE and showing window")
-        state_machine.transition_to(State.IDLE)
+        print("[MAIN] Setting initial state to APPEARING and showing window")
+        game_window.sprite.reset_appearing_animation()
+        state_machine.transition_to(State.APPEARING)
         game_window.show()
     else:
         print("[MAIN] Setting initial state to HIDDEN")

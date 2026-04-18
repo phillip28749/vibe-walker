@@ -8,7 +8,7 @@ from PyQt5.QtGui import QScreen, QImage, QPixmap, QRegion, QBitmap
 from src.sprite_manager import CharacterSprite
 from src.state_machine import State, StateMachine
 from src.drag_handler import DragHandler
-from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION
+from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION, ACTION_NEEDED, ACTION_HANDLED
 
 
 class GameWindow(QMainWindow):
@@ -125,6 +125,14 @@ class GameWindow(QMainWindow):
         self.dragged_frame_counter = 0
         self.dragged_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
 
+        # Waving animation state
+        self.waving_frame_counter = 0
+        self.waving_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+
+        # Appearing animation state
+        self.appearing_frame_counter = 0
+        self.appearing_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+
         # Track window position on screen for walking
         self.window_x = self.initial_window_x
 
@@ -137,6 +145,8 @@ class GameWindow(QMainWindow):
 
         # Track Claude Code activity state
         self.claude_active = False
+        self.action_needed = False
+        self.state_before_waving = None  # Store state to return to after waving
 
     def _start_game_loop(self):
         """Start Pygame update loop via QTimer"""
@@ -187,12 +197,36 @@ class GameWindow(QMainWindow):
                 self.state_machine.transition_to(State.IDLE)
 
         elif event.type == SHOW_MINION:
-            self.state_machine.transition_to(State.IDLE)
+            # Show with appearing animation
+            self.sprite.reset_appearing_animation()
+            self.state_machine.transition_to(State.APPEARING)
             self.show()
 
         elif event.type == HIDE_MINION:
             self.state_machine.transition_to(State.HIDDEN)
             self.hide()
+
+        elif event.type == ACTION_NEEDED:
+            print("[GAME] Received ACTION_NEEDED event - starting waving")
+            self.action_needed = True
+            # Store current state to return to later
+            current_state = self.state_machine.current_state
+            if current_state not in [State.WAVING, State.HIDDEN, State.APPEARING]:
+                self.state_before_waving = current_state
+                self.state_machine.transition_to(State.WAVING)
+
+        elif event.type == ACTION_HANDLED:
+            print("[GAME] Received ACTION_HANDLED event - stopping waving")
+            self.action_needed = False
+            # Return to previous state
+            if self.state_machine.current_state == State.WAVING:
+                if self.state_before_waving:
+                    self.state_machine.transition_to(self.state_before_waving)
+                    self.state_before_waving = None
+                elif self.claude_active:
+                    self.state_machine.transition_to(State.WALKING)
+                else:
+                    self.state_machine.transition_to(State.IDLE)
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             # Store where in the window they clicked
@@ -224,12 +258,32 @@ class GameWindow(QMainWindow):
         """Update sprite animation based on state"""
         state = self.state_machine.current_state
 
-        if state == State.DRAGGED or state == State.DROPPING:
+        if state == State.APPEARING:
+            # Update appearing animation
+            self.appearing_frame_counter += 1
+            if self.appearing_frame_counter >= self.appearing_frame_update_rate:
+                self.appearing_frame_counter = 0
+                is_complete = self.sprite.update_appearing_frame()
+                if is_complete:
+                    # Appearing animation complete, transition to idle
+                    if self.claude_active:
+                        self.state_machine.transition_to(State.WALKING)
+                    else:
+                        self.state_machine.transition_to(State.IDLE)
+
+        elif state == State.DRAGGED or state == State.DROPPING:
             # Update dragged animation
             self.dragged_frame_counter += 1
             if self.dragged_frame_counter >= self.dragged_frame_update_rate:
                 self.dragged_frame_counter = 0
                 self.sprite.update_dragged_frame()
+
+        elif state == State.WAVING:
+            # Update waving animation
+            self.waving_frame_counter += 1
+            if self.waving_frame_counter >= self.waving_frame_update_rate:
+                self.waving_frame_counter = 0
+                self.sprite.update_waving_frame()
 
         elif state == State.WALKING:
             # Update walk frame
