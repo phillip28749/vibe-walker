@@ -3,7 +3,7 @@
   "idle_timeout_sec": 7,
   "animation_fps": 7,
   "movement_speed_px": 2,
-  "sprite_size": 64,
+  "sprite_size": 96,
   "window_bottom_offset": 50,
   "trace_file_path": "trace/query_events.jsonl",
   "trace_poll_interval_ms": 500,
@@ -11,5 +11,6 @@
   "reactive_mode_enabled": true,
   "baseline_y_offset": 50,
   "drop_duration_ms": 800,
-  "pygame_fps": 60
+  "pygame_fps": 60,
+  "dragged_animation_enabled": false
 }

@@ -48,7 +48,7 @@ class GameWindow(QMainWindow):
         # Transparency disabled - embedded pygame + Qt transparency is problematic on Windows
 
         # Set fixed size - slightly larger for visibility
-        size = 80  # A bit bigger than sprite_size
+        size = 120  # A bit bigger than sprite_size
         self.setFixedSize(size, size)
 
         # Create container widget for Pygame
@@ -103,7 +103,10 @@ class GameWindow(QMainWindow):
     def _init_game_objects(self):
         """Initialize sprite, drag handler, etc."""
         # Create sprite
-        self.sprite = CharacterSprite(sprite_size=self.config.sprite_size)
+        self.sprite = CharacterSprite(
+            sprite_size=self.config.sprite_size,
+            use_dragged_animation=self.config.dragged_animation_enabled
+        )
         self.sprite_group = pygame.sprite.Group(self.sprite)
 
         # Create drag handler
@@ -117,6 +120,10 @@ class GameWindow(QMainWindow):
         self.walk_direction = 1  # 1 = right, -1 = left
         self.walk_frame_counter = 0
         self.walk_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+
+        # Dragged animation state
+        self.dragged_frame_counter = 0
+        self.dragged_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
 
         # Track window position on screen for walking
         self.window_x = self.initial_window_x
@@ -223,7 +230,14 @@ class GameWindow(QMainWindow):
         """Update sprite animation based on state"""
         state = self.state_machine.current_state
 
-        if state == State.WALKING:
+        if state == State.DRAGGED or state == State.DROPPING:
+            # Update dragged animation
+            self.dragged_frame_counter += 1
+            if self.dragged_frame_counter >= self.dragged_frame_update_rate:
+                self.dragged_frame_counter = 0
+                self.sprite.update_dragged_frame()
+
+        elif state == State.WALKING:
             # Update walk frame
             self.walk_frame_counter += 1
             if self.walk_frame_counter >= self.walk_frame_update_rate:

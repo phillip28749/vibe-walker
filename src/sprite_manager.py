@@ -6,13 +6,15 @@ from src.state_machine import State
 class CharacterSprite(pygame.sprite.Sprite):
     """Pygame sprite for the desktop pet character"""
 
-    def __init__(self, sprite_size=64):
+    def __init__(self, sprite_size=64, use_dragged_animation=True):
         super().__init__()
         self.sprite_size = sprite_size
+        self.use_dragged_animation = use_dragged_animation
         self.images = {}
         self.current_state = State.IDLE
         self.walk_frame = 0
         self.walk_direction = 1  # 1 = right, -1 = left
+        self.dragged_frame = 0  # Frame for dragged animation
 
         # Load sprite images
         self._load_images()
@@ -41,13 +43,26 @@ class CharacterSprite(pygame.sprite.Sprite):
             ]
         }
 
-        # Load dragged sprite
-        dragged_path = os.path.join(sprite_dir, "dragged.png")
-        if os.path.exists(dragged_path):
-            self.images[State.DRAGGED] = self._load_sprite(dragged_path)
+        # Load dragged sprite (animated or static based on config)
+        if self.use_dragged_animation:
+            # Load sprite sheet for animation
+            dragged_sheet_path = os.path.join(sprite_dir, "dragged_sheet.png")
+            if os.path.exists(dragged_sheet_path):
+                self.images[State.DRAGGED] = self._load_sprite_sheet(dragged_sheet_path, frames=8)
+            else:
+                # Fallback to single sprite
+                dragged_path = os.path.join(sprite_dir, "dragged.png")
+                if os.path.exists(dragged_path):
+                    self.images[State.DRAGGED] = [self._load_sprite(dragged_path)]
+                else:
+                    self.images[State.DRAGGED] = [self.images[State.IDLE]]
         else:
-            # Fallback to idle if dragged sprite doesn't exist yet
-            self.images[State.DRAGGED] = self.images[State.IDLE]
+            # Use single static sprite
+            dragged_path = os.path.join(sprite_dir, "dragged.png")
+            if os.path.exists(dragged_path):
+                self.images[State.DRAGGED] = [self._load_sprite(dragged_path)]
+            else:
+                self.images[State.DRAGGED] = [self.images[State.IDLE]]
 
     def _load_sprite(self, path):
         """Load and scale a sprite image"""
@@ -64,6 +79,38 @@ class CharacterSprite(pygame.sprite.Sprite):
         image = pygame.image.load(path).convert_alpha()
         return pygame.transform.scale(image, (self.sprite_size, self.sprite_size))
 
+    def _load_sprite_sheet(self, path, frames=8):
+        """Load and extract frames from a horizontal sprite sheet
+
+        Args:
+            path: Path to sprite sheet image
+            frames: Number of frames in the sheet (arranged horizontally)
+
+        Returns:
+            List of pygame surfaces, one per frame
+        """
+        # Ensure display is set for convert_alpha to work
+        if pygame.display.get_surface() is None:
+            pygame.display.set_mode((1, 1), pygame.HIDDEN)
+
+        sheet = pygame.image.load(path).convert_alpha()
+        sheet_width, sheet_height = sheet.get_size()
+        frame_width = sheet_width // frames
+        frame_height = sheet_height  # Assume single row
+
+        frame_list = []
+        for i in range(frames):
+            # Extract frame from sheet
+            frame_rect = pygame.Rect(i * frame_width, 0, frame_width, frame_height)
+            frame = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA)
+            frame.blit(sheet, (0, 0), frame_rect)
+
+            # Scale to sprite size
+            scaled_frame = pygame.transform.scale(frame, (self.sprite_size, self.sprite_size))
+            frame_list.append(scaled_frame)
+
+        return frame_list
+
     def update_state(self, state):
         """Update sprite based on state
 
@@ -75,8 +122,8 @@ class CharacterSprite(pygame.sprite.Sprite):
         if state == State.IDLE:
             self.image = self.images[State.IDLE]
         elif state == State.DRAGGED or state == State.DROPPING:
-            # Both dragged and dropping use the dragged sprite
-            self.image = self.images[State.DRAGGED]
+            # Animate dragged state
+            self.image = self.images[State.DRAGGED][self.dragged_frame]
         elif state == State.WALKING:
             # Animate walking
             direction = "right" if self.walk_direction > 0 else "left"
@@ -89,6 +136,11 @@ class CharacterSprite(pygame.sprite.Sprite):
     def update_walk_frame(self):
         """Advance walking animation frame"""
         self.walk_frame = (self.walk_frame + 1) % 2
+
+    def update_dragged_frame(self):
+        """Advance dragged animation frame"""
+        num_frames = len(self.images[State.DRAGGED])
+        self.dragged_frame = (self.dragged_frame + 1) % num_frames
 
     def set_walk_direction(self, direction):
         """Set walk direction (1 = right, -1 = left)"""

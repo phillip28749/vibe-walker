@@ -167,6 +167,11 @@ class Config:
         """Get Pygame rendering loop frame rate."""
         return self.config.get("pygame_fps", 60)
 
+    @property
+    def dragged_animation_enabled(self):
+        """Get whether dragged sprite animation is enabled."""
+        return self.config.get("dragged_animation_enabled", True)
+
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.
 
