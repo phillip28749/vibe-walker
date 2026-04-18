@@ -87,9 +87,9 @@ class CharacterSprite(pygame.sprite.Sprite):
     def _load_sprite(self, path):
         """Load and scale a sprite image"""
         if not os.path.exists(path):
-            # Create placeholder surface
+            # Create placeholder surface (fully transparent)
             surface = pygame.Surface((self.sprite_size, self.sprite_size), pygame.SRCALPHA)
-            surface.fill((255, 0, 255, 128))  # Magenta placeholder
+            surface.fill((0, 0, 0, 0))  # Fully transparent placeholder
             return surface
 
         # Ensure display is set for convert_alpha to work
@@ -97,7 +97,8 @@ class CharacterSprite(pygame.sprite.Sprite):
             pygame.display.set_mode((1, 1), pygame.HIDDEN)
 
         image = pygame.image.load(path).convert_alpha()
-        return pygame.transform.scale(image, (self.sprite_size, self.sprite_size))
+        # Use smoothscale for better quality when scaling
+        return pygame.transform.smoothscale(image, (self.sprite_size, self.sprite_size))
 
     def _load_sprite_sheet(self, path, frames=8):
         """Load and extract frames from a horizontal sprite sheet
@@ -125,8 +126,8 @@ class CharacterSprite(pygame.sprite.Sprite):
             frame = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA)
             frame.blit(sheet, (0, 0), frame_rect)
 
-            # Scale to sprite size
-            scaled_frame = pygame.transform.scale(frame, (self.sprite_size, self.sprite_size))
+            # Use smoothscale for better quality
+            scaled_frame = pygame.transform.smoothscale(frame, (self.sprite_size, self.sprite_size))
             frame_list.append(scaled_frame)
 
         return frame_list

@@ -14,10 +14,11 @@ from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HID
 class GameWindow(QMainWindow):
     """PyQt5 window with embedded Pygame surface"""
 
-    def __init__(self, config, state_machine):
+    def __init__(self, config, state_machine, spawn_from=None):
         super().__init__()
         self.config = config
         self.state_machine = state_machine
+        self.spawn_from = spawn_from  # Optional (x, y) position to spawn from
 
         print("[GAME] Initializing game window...")
 
@@ -47,8 +48,9 @@ class GameWindow(QMainWindow):
         )
         # Transparency disabled - embedded pygame + Qt transparency is problematic on Windows
 
-        # Set fixed size - slightly larger for visibility
-        size = 120  # A bit bigger than sprite_size
+        # Set window size slightly larger than sprite to prevent edge clipping
+        # Padding ensures transparency mask works correctly
+        size = self.config.sprite_size
         self.setFixedSize(size, size)
 
         # Create container widget for Pygame
@@ -63,24 +65,38 @@ class GameWindow(QMainWindow):
         self._position_at_baseline()
 
     def _position_at_baseline(self):
-        """Position window at baseline with optional random X"""
+        """Position window at baseline or spawn position with optional random X"""
         screen = QApplication.primaryScreen().geometry()
 
         size = self.window_size
 
-        if self.config.random_spawn_enabled:
-            x = random.randint(0, screen.width() - size)
+        baseline_y = screen.height() - self.config.baseline_y_offset - size
+
+        # If spawn position provided, start there and drop straight down
+        if self.spawn_from is not None:
+            spawn_x, spawn_y = self.spawn_from
+            # Center the window on the spawn point
+            x = spawn_x - size // 2
+            y = spawn_y - size // 2
+            self.move(x, y)
+            self.window_x = x
+            # Baseline should be directly below spawn position
+            self.baseline_y = baseline_y
+            self.initial_window_x = x
+            print(f"[GAME] Spawning at preview position ({x}, {y}), will drop to ({x}, {baseline_y})")
         else:
-            x = screen.width() // 2
+            # Normal baseline positioning with optional random X
+            if self.config.random_spawn_enabled:
+                baseline_x = random.randint(0, screen.width() - size)
+            else:
+                baseline_x = screen.width() // 2
 
-        y = screen.height() - self.config.baseline_y_offset - size
+            self.move(baseline_x, baseline_y)
+            self.window_x = baseline_x
+            self.baseline_y = baseline_y
+            self.initial_window_x = baseline_x
 
-        self.move(x, y)
-        self.baseline_y = y
         self.baseline_screen_height = screen.height()
-
-        # Store initial window position for walking
-        self.initial_window_x = x
 
     def _setup_pygame(self):
         """Initialize Pygame surface embedded in Qt widget"""
@@ -97,7 +113,7 @@ class GameWindow(QMainWindow):
         self.pygame_screen = pygame.display.set_mode((size, size), pygame.NOFRAME)
         self.clock = pygame.time.Clock()
 
-        # Set transparent color key (magenta - will be made transparent)
+        # Set transparent color key (magenta - will be made transparent via mask)
         self.transparent_color = (255, 0, 255)
 
     def _init_game_objects(self):
@@ -184,11 +200,11 @@ class GameWindow(QMainWindow):
         # Update drag/drop physics
         self._update_physics()
 
-        # Render with transparent color key
-        self.pygame_screen.fill(self.transparent_color)  # Magenta background
+        # Render with magenta background (will be masked as transparent)
+        self.pygame_screen.fill(self.transparent_color)
         self.sprite_group.draw(self.pygame_screen)
 
-        # Create mask from pygame surface to make magenta pixels transparent
+        # Create transparency mask (magenta pixels become transparent)
         self._update_transparency_mask()
 
         pygame.display.flip()
@@ -369,28 +385,36 @@ class GameWindow(QMainWindow):
                     self.state_machine.transition_to(State.IDLE)
 
     def _update_transparency_mask(self):
-        """Update window mask to make transparent color invisible"""
-        # Get pygame surface data
-        surf_data = pygame.image.tostring(self.pygame_screen, 'RGB')
+        """Update window mask to make magenta pixels transparent"""
+        # Get pygame surface data as RGBA for proper 4-byte alignment
+        surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
 
-        # Create QImage from pygame surface
-        img = QImage(surf_data, self.window_size, self.window_size, QImage.Format_RGB888)
+        # Create QImage from pygame surface with explicit bytes per line
+        # RGBA = 4 bytes per pixel (naturally aligned)
+        bytes_per_line = self.window_size * 4
+        img = QImage(surf_data, self.window_size, self.window_size, bytes_per_line, QImage.Format_RGBA8888)
 
-        # Create mask: pixels matching transparent_color become transparent
+        # Create mask: pixels matching magenta become transparent
         mask = QBitmap(self.window_size, self.window_size)
         mask.fill(Qt.color0)  # Start with all transparent
 
-        # Paint non-transparent pixels
+        # Paint non-magenta pixels as visible
         from PyQt5.QtGui import QPainter, QColor
         painter = QPainter(mask)
+
         for y in range(self.window_size):
             for x in range(self.window_size):
                 pixel = img.pixel(x, y)
                 color = QColor(pixel)
-                # If not magenta, mark as visible
-                if not (color.red() == 255 and color.green() == 0 and color.blue() == 255):
+                # If not magenta or near-magenta (within threshold), mark as visible
+                # This handles anti-aliased edges from smoothscale
+                r, g, b = color.red(), color.green(), color.blue()
+                is_magenta = (abs(r - 255) < 10 and abs(g - 0) < 10 and abs(b - 255) < 10)
+
+                if not is_magenta:
                     painter.setPen(Qt.color1)
                     painter.drawPoint(x, y)
+
         painter.end()
 
         # Apply mask to window
@@ -405,6 +429,19 @@ class GameWindow(QMainWindow):
         else:
             print("[GAME] Showing window")
             self.show()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events at Qt level (works with mask, bypasses pygame transparency)"""
+        from PyQt5.QtCore import Qt as QtCore
+
+        if event.button() == QtCore.RightButton:
+            # Right-click detected - show context menu
+            print(f"[GAME] Qt right-click detected at: {event.pos()}")
+            self._show_context_menu()
+            event.accept()
+        else:
+            # Pass other events to parent (for drag handling via pygame)
+            super().mousePressEvent(event)
 
     def _show_context_menu(self):
         """Show right-click context menu for behavior mode selection"""

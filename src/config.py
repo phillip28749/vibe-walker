@@ -12,7 +12,7 @@ class Config:
         "idle_timeout_sec": 7,
         "animation_fps": 7,
         "movement_speed_px": 2,
-        "sprite_size": 64,
+        "sprite_size": 69,
         "window_bottom_offset": 50,
         "trace_file_path": "trace/query_events.jsonl",
         "trace_poll_interval_ms": 500,
@@ -26,7 +26,8 @@ class Config:
         "debug_action_detection": False,
         "permission_timeout_sec": 60,  # Timeout for permission dialogs
         "action_timeout_sec": 30,      # Timeout for other actions
-        "behavior_mode": "claude"      # Behavior mode: "claude" or "pet"
+        "behavior_mode": "claude",     # Behavior mode: "claude" or "pet"
+        "dragged_animation_enabled": False  # Use animated sprite when dragged
     }
 
     def __init__(self, config_file="config.json"):
