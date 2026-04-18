@@ -154,6 +154,9 @@ class GameWindow(QMainWindow):
         # Update sprite based on state
         self._update_sprite()
 
+        # Update drag position if dragging
+        self._update_drag()
+
         # Update drag/drop physics
         self._update_physics()
 
@@ -198,17 +201,8 @@ class GameWindow(QMainWindow):
             self.state_machine.transition_to(State.DRAGGED)
 
         elif event.type == pygame.MOUSEMOTION:
-            if self.state_machine.current_state == State.DRAGGED:
-                # Get global mouse position
-                from PyQt5.QtGui import QCursor
-                global_pos = QCursor.pos()
-
-                # Calculate where window should be (mouse - offset from where they clicked)
-                screen_x = global_pos.x() - self.drag_start_offset_x
-                screen_y = global_pos.y() - self.drag_start_offset_y
-
-                self.move(screen_x, screen_y)
-                self.window_x = screen_x
+            # Mouse motion events handled in _update_drag() for smoother tracking
+            pass
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if self.state_machine.current_state == State.DRAGGED:
@@ -261,6 +255,21 @@ class GameWindow(QMainWindow):
 
         # Update sprite image
         self.sprite.update_state(state)
+
+    def _update_drag(self):
+        """Update window position during drag (every frame for smooth tracking)"""
+        if self.state_machine.current_state == State.DRAGGED:
+            # Get current global mouse position
+            from PyQt5.QtGui import QCursor
+            global_pos = QCursor.pos()
+
+            # Calculate where window should be (mouse - offset from where they clicked)
+            screen_x = global_pos.x() - self.drag_start_offset_x
+            screen_y = global_pos.y() - self.drag_start_offset_y
+
+            # Update window position
+            self.move(screen_x, screen_y)
+            self.window_x = screen_x
 
     def _update_physics(self):
         """Update drop physics if dropping"""
