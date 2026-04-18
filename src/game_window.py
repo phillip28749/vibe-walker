@@ -145,7 +145,7 @@ class GameWindow(QMainWindow):
 
         # Track Claude Code activity state
         self.claude_active = False
-        self.action_needed = False
+        self.pending_actions_count = 0  # Count of pending actions requiring user input
         self.state_before_waving = None  # Store state to return to after waving
 
     def _start_game_loop(self):
@@ -207,19 +207,23 @@ class GameWindow(QMainWindow):
             self.hide()
 
         elif event.type == ACTION_NEEDED:
-            print("[GAME] Received ACTION_NEEDED event - starting waving")
-            self.action_needed = True
-            # Store current state to return to later
+            self.pending_actions_count += 1
+            print(f"[GAME] Received ACTION_NEEDED event (pending: {self.pending_actions_count})")
+
+            # Start waving if not already waving
             current_state = self.state_machine.current_state
             if current_state not in [State.WAVING, State.HIDDEN, State.APPEARING]:
                 self.state_before_waving = current_state
                 self.state_machine.transition_to(State.WAVING)
+                print("[GAME] Started waving animation")
 
         elif event.type == ACTION_HANDLED:
-            print("[GAME] Received ACTION_HANDLED event - stopping waving")
-            self.action_needed = False
-            # Return to previous state
-            if self.state_machine.current_state == State.WAVING:
+            self.pending_actions_count = max(0, self.pending_actions_count - 1)
+            print(f"[GAME] Received ACTION_HANDLED event (pending: {self.pending_actions_count})")
+
+            # Only stop waving when ALL actions are handled
+            if self.pending_actions_count == 0 and self.state_machine.current_state == State.WAVING:
+                print("[GAME] All actions handled - stopping waving")
                 if self.state_before_waving:
                     self.state_machine.transition_to(self.state_before_waving)
                     self.state_before_waving = None
