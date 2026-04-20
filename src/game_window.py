@@ -156,6 +156,9 @@ class GameWindow(QMainWindow):
         self.sprite.rect.x = (self.window_size - self.config.sprite_size) // 2
         self.sprite.rect.y = (self.window_size - self.config.sprite_size) // 2
 
+        # Track last sprite image to avoid unnecessary mask updates
+        self.last_sprite_image = None
+
         # Connect state machine signals
         self.state_machine.state_changed.connect(self.on_state_changed)
 
@@ -204,8 +207,10 @@ class GameWindow(QMainWindow):
         self.pygame_screen.fill(self.transparent_color)
         self.sprite_group.draw(self.pygame_screen)
 
-        # Create transparency mask (magenta pixels become transparent)
-        self._update_transparency_mask()
+        # Only update mask if sprite image changed
+        if self.sprite.image != self.last_sprite_image:
+            self._update_transparency_mask()
+            self.last_sprite_image = self.sprite.image
 
         pygame.display.flip()
 
@@ -280,15 +285,30 @@ class GameWindow(QMainWindow):
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if self.state_machine.current_state == State.DRAGGED:
-                # Check if we need to drop (if above baseline)
-                if self.y() < self.baseline_y:
-                    # Start drop animation
+                # Check if we need to drop (if above baseline or has horizontal velocity)
+                current_x = self.x()
+                current_y = self.y()
+
+                # Calculate throw velocity
+                vel_x, vel_y = self.drag_handler.calculate_throw_velocity()
+
+                # Drop if above baseline or has significant throw velocity
+                if current_y < self.baseline_y or abs(vel_x) > 1 or abs(vel_y) > 1:
+                    # Start drop animation with bouncing and throw physics
+                    current_time = pygame.time.get_ticks()
                     self.drag_handler.is_dropping = True
-                    self.drag_handler.drop_start_y = self.y()
-                    self.drag_handler.drop_start_time = pygame.time.get_ticks()
+                    self.drag_handler.drop_start_y = current_y
+                    self.drag_handler.drop_start_time = current_time
+                    self.drag_handler.last_update_time = current_time
+                    self.drag_handler.drop_x = float(current_x)
+                    self.drag_handler.drop_y = float(current_y)
+                    self.drag_handler.velocity_x = vel_x
+                    self.drag_handler.velocity_y = vel_y
+                    self.drag_handler.mouse_history.clear()
                     self.state_machine.transition_to(State.DROPPING)
                 else:
-                    # Already at or below baseline
+                    # Already at baseline with no throw velocity
+                    self.drag_handler.mouse_history.clear()
                     if self.claude_active:
                         self.state_machine.transition_to(State.WALKING)
                     else:
@@ -333,7 +353,10 @@ class GameWindow(QMainWindow):
                 self.sprite.update_walk_frame()
 
             # Move window position on screen (not the sprite within the window)
-            self.window_x += self.walk_direction * self.config.movement_speed_px
+            # Scale movement speed with sprite size (base size = 69px)
+            self.config.scale_factor = self.config.sprite_size / 69.0
+            scaled_speed = self.config.movement_speed_px * self.config.scale_factor
+            self.window_x += self.walk_direction * scaled_speed
 
             # Check screen edges
             screen = QApplication.primaryScreen().geometry()
@@ -345,7 +368,7 @@ class GameWindow(QMainWindow):
                 self.sprite.set_walk_direction(-1)
 
             # Update window position (sprite stays centered in window)
-            self.move(self.window_x, self.baseline_y)
+            self.move(int(self.window_x), self.baseline_y)
 
         # Update sprite image
         self.sprite.update_state(state)
@@ -361,6 +384,9 @@ class GameWindow(QMainWindow):
             screen_x = global_pos.x() - self.drag_start_offset_x
             screen_y = global_pos.y() - self.drag_start_offset_y
 
+            # Track mouse position for throw velocity calculation
+            self.drag_handler.update_mouse_position(global_pos.x(), global_pos.y())
+
             # Update window position
             self.move(screen_x, screen_y)
             self.window_x = screen_x
@@ -369,10 +395,16 @@ class GameWindow(QMainWindow):
         """Update drop physics if dropping"""
         if self.state_machine.current_state == State.DROPPING:
             current_time = pygame.time.get_ticks()
-            y, is_complete = self.drag_handler.update_drop(current_time)
+            screen = QApplication.primaryScreen().geometry()
+            x, y, is_complete = self.drag_handler.update_drop(
+                current_time,
+                screen.width(),
+                self.window_size
+            )
 
-            # Update window Y position (sprite stays centered in window)
-            self.move(self.window_x, y)
+            # Update window position (both X and Y)
+            self.move(x, y)
+            self.window_x = x
 
             if is_complete:
                 # Drop complete, return to baseline
@@ -386,39 +418,34 @@ class GameWindow(QMainWindow):
 
     def _update_transparency_mask(self):
         """Update window mask to make magenta pixels transparent"""
-        # Get pygame surface data as RGBA for proper 4-byte alignment
+        import numpy as np
+        from PyQt5.QtGui import QPainter, QRegion
+
+        # Get pygame surface data as RGBA
         surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
 
-        # Create QImage from pygame surface with explicit bytes per line
-        # RGBA = 4 bytes per pixel (naturally aligned)
-        bytes_per_line = self.window_size * 4
-        img = QImage(surf_data, self.window_size, self.window_size, bytes_per_line, QImage.Format_RGBA8888)
+        # Convert to numpy array for vectorized operations
+        pixels = np.frombuffer(surf_data, dtype=np.uint8).reshape((self.window_size, self.window_size, 4))
 
-        # Create mask: pixels matching magenta become transparent
-        mask = QBitmap(self.window_size, self.window_size)
-        mask.fill(Qt.color0)  # Start with all transparent
+        # Vectorized magenta detection with threshold (R=255, G=0, B=255, threshold=10)
+        r, g, b = pixels[:, :, 0], pixels[:, :, 1], pixels[:, :, 2]
+        is_not_magenta = ~((np.abs(r.astype(np.int16) - 255) < 10) &
+                           (np.abs(g.astype(np.int16) - 0) < 10) &
+                           (np.abs(b.astype(np.int16) - 255) < 10))
 
-        # Paint non-magenta pixels as visible
-        from PyQt5.QtGui import QPainter, QColor
-        painter = QPainter(mask)
+        # Create region from non-magenta pixels for better performance
+        from PyQt5.QtCore import QPoint
+        region = QRegion()
 
-        for y in range(self.window_size):
-            for x in range(self.window_size):
-                pixel = img.pixel(x, y)
-                color = QColor(pixel)
-                # If not magenta or near-magenta (within threshold), mark as visible
-                # This handles anti-aliased edges from smoothscale
-                r, g, b = color.red(), color.green(), color.blue()
-                is_magenta = (abs(r - 255) < 10 and abs(g - 0) < 10 and abs(b - 255) < 10)
+        # Get coordinates of non-magenta pixels
+        y_coords, x_coords = np.where(is_not_magenta)
 
-                if not is_magenta:
-                    painter.setPen(Qt.color1)
-                    painter.drawPoint(x, y)
+        # Add points to region in batches for better performance
+        for x, y in zip(x_coords, y_coords):
+            region = region.united(QRegion(int(x), int(y), 1, 1))
 
-        painter.end()
-
-        # Apply mask to window
-        self.setMask(mask)
+        # Apply region as mask
+        self.setMask(region)
 
     def on_state_changed(self, new_state):
         """Handle state changes"""
