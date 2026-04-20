@@ -60,3 +60,4 @@ Thumbs.db
 nohup.out
 .claude/
 trace/
+config.json
