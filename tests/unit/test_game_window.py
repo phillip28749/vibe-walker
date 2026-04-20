@@ -162,7 +162,7 @@ def test_timer_starts_on_initialization(qapp, mock_config, mock_pygame):
 
 
 def test_baseline_y_calculated_correctly(qapp, mock_config, mock_pygame):
-    """Baseline Y position calculated from screen height and offset"""
+    """Baseline Y position aligns to the monitor work-area bottom (taskbar top)."""
     state_machine = StateMachine()
     with patch('src.game_window.CharacterSprite'), \
          patch('src.game_window.DragHandler'), \
@@ -177,6 +177,6 @@ def test_baseline_y_calculated_correctly(qapp, mock_config, mock_pygame):
 
         window = GameWindow(mock_config, state_machine)
 
-        # baseline_y = screen_height - baseline_y_offset - sprite_size
-        # baseline_y = 1080 - 50 - 64 = 966
-        assert window.baseline_y == 966
+        # baseline_y = work_area_bottom - sprite_size
+        # baseline_y = 1080 - 64 = 1016
+        assert window.baseline_y == 1016

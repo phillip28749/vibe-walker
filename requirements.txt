@@ -5,3 +5,4 @@ psutil==5.9.5
 pytest==7.4.0
 pytest-qt==4.2.0
 numpy
+pywin32==306

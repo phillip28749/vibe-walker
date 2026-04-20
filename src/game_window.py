@@ -1,5 +1,7 @@
 import os
 import sys
+import ctypes
+from ctypes import wintypes
 import pygame
 import random
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
@@ -21,6 +23,12 @@ class GameWindow(QMainWindow):
         self.spawn_from = spawn_from  # Optional (x, y) position to spawn from
         self.last_topmost_enforce_ms = 0
         self.topmost_enforce_interval_ms = 500
+        self.window_bounds_update_interval_ms = 2000
+        self.last_window_bounds_update_ms = -self.window_bounds_update_interval_ms
+        self.window_platforms = []
+        self.window_union_bounds = None
+        self.platform_baseline_tolerance_px = 30
+        self.last_virtual_bounds = self._get_virtual_screen_bounds()
 
         print("[GAME] Initializing game window...")
 
@@ -72,14 +80,13 @@ class GameWindow(QMainWindow):
 
         size = self.window_size
 
-        baseline_y = screen.height() - self.config.baseline_y_offset - size
-
         # If spawn position provided, start there and drop straight down
         if self.spawn_from is not None:
             spawn_x, spawn_y = self.spawn_from
             # Center the window on the spawn point
             x = spawn_x - size // 2
             y = spawn_y - size // 2
+            baseline_y = self._get_taskbar_baseline_for_point(x + size // 2, y + size // 2)
             self.move(x, y)
             self.window_x = x
             # Baseline should be directly below spawn position
@@ -92,6 +99,8 @@ class GameWindow(QMainWindow):
                 baseline_x = random.randint(0, screen.width() - size)
             else:
                 baseline_x = screen.width() // 2
+
+            baseline_y = self._get_taskbar_baseline_for_point(baseline_x + size // 2, screen.center().y())
 
             self.move(baseline_x, baseline_y)
             self.window_x = baseline_x
@@ -193,6 +202,8 @@ class GameWindow(QMainWindow):
     def update_game(self):
         """Main Pygame update loop (called every frame)"""
         self._maybe_enforce_topmost()
+        self._refresh_active_window_bounds()
+        self._recover_if_display_layout_changed()
 
         # Process events
         for event in pygame.event.get():
@@ -220,6 +231,49 @@ class GameWindow(QMainWindow):
 
         # Maintain framerate
         self.clock.tick(self.config.pygame_fps)
+
+    def _recover_if_display_layout_changed(self):
+        """Re-anchor the mob when monitor layout changes or when it drifts off-screen."""
+        if self.state_machine.current_state in [State.DRAGGED, State.DROPPING]:
+            return
+
+        current_virtual_bounds = self._get_virtual_screen_bounds()
+        layout_changed = current_virtual_bounds != self.last_virtual_bounds
+
+        x = self.x()
+        y = self.y()
+        is_offscreen = self._is_window_offscreen(x, y, current_virtual_bounds)
+
+        if not layout_changed and not is_offscreen:
+            return
+
+        if layout_changed:
+            print("[GAME] Display layout changed - re-anchoring minion")
+            self.last_virtual_bounds = current_virtual_bounds
+
+        target_x, target_y = self._recover_visible_position(x, y, current_virtual_bounds)
+        self.move(target_x, target_y)
+        self.window_x = target_x
+        self.baseline_y = target_y
+        self.drag_handler.baseline_y = target_y
+
+    def _is_window_offscreen(self, x, y, bounds):
+        """Return True when the window is fully outside the virtual desktop bounds."""
+        left, top, right, bottom = bounds
+        return (
+            x + self.window_size < left or
+            x > right or
+            y + self.window_size < top or
+            y > bottom
+        )
+
+    def _recover_visible_position(self, x, y, virtual_bounds):
+        """Compute a safe visible position on the nearest monitor baseline."""
+        clamped_x, _ = self._clamp_position_to_bounds(x, y, virtual_bounds, clamp_top=False)
+        monitor_center_x = clamped_x + self.window_size // 2
+        monitor_center_y = y + self.window_size // 2
+        baseline_y = self._get_taskbar_baseline_for_point(monitor_center_x, monitor_center_y)
+        return clamped_x, baseline_y
 
     def _handle_event(self, event):
         """Handle Pygame events"""
@@ -292,12 +346,15 @@ class GameWindow(QMainWindow):
                 # Check if we need to drop (if above baseline or has horizontal velocity)
                 current_x = self.x()
                 current_y = self.y()
+                landing_baseline = self._get_landing_baseline(current_x, current_y)
+                self.baseline_y = landing_baseline
+                self.drag_handler.baseline_y = landing_baseline
 
                 # Calculate throw velocity
                 vel_x, vel_y = self.drag_handler.calculate_throw_velocity()
 
                 # Drop if above baseline or has significant throw velocity
-                if current_y < self.baseline_y or abs(vel_x) > 1 or abs(vel_y) > 1:
+                if current_y < landing_baseline or abs(vel_x) > 1 or abs(vel_y) > 1:
                     # Start drop animation with bouncing and throw physics
                     current_time = pygame.time.get_ticks()
                     self.drag_handler.is_dropping = True
@@ -312,6 +369,7 @@ class GameWindow(QMainWindow):
                     self.state_machine.transition_to(State.DROPPING)
                 else:
                     # Already at baseline with no throw velocity
+                    self.move(current_x, landing_baseline)
                     self.drag_handler.mouse_history.clear()
                     if self.claude_active:
                         self.state_machine.transition_to(State.WALKING)
@@ -362,17 +420,23 @@ class GameWindow(QMainWindow):
             scaled_speed = self.config.movement_speed_px * self.config.scale_factor
             self.window_x += self.walk_direction * scaled_speed
 
-            # Check screen edges
-            screen = QApplication.primaryScreen().geometry()
-            if self.window_x <= 0:
+            baseline_y, min_x, max_x = self._get_walk_lane(self.window_x, self.baseline_y)
+
+            # Check current lane edges (side-by-side windows share a lane)
+            if self.window_x <= min_x:
                 self.walk_direction = 1
                 self.sprite.set_walk_direction(1)
-            elif self.window_x >= screen.width() - self.window_size:
+                self.window_x = min_x
+            elif self.window_x >= max_x:
                 self.walk_direction = -1
                 self.sprite.set_walk_direction(-1)
+                self.window_x = max_x
+
+            self.baseline_y = baseline_y
+            self.drag_handler.baseline_y = baseline_y
 
             # Update window position (sprite stays centered in window)
-            self.move(int(self.window_x), self.baseline_y)
+            self.move(int(self.window_x), baseline_y)
 
         # Update sprite image
         self.sprite.update_state(state)
@@ -387,6 +451,12 @@ class GameWindow(QMainWindow):
             # Calculate where window should be (mouse - offset from where they clicked)
             screen_x = global_pos.x() - self.drag_start_offset_x
             screen_y = global_pos.y() - self.drag_start_offset_y
+            screen_x, screen_y = self._clamp_position_to_bounds(
+                screen_x,
+                screen_y,
+                self._get_virtual_screen_bounds(),
+                clamp_top=False
+            )
 
             # Track mouse position for throw velocity calculation
             self.drag_handler.update_mouse_position(global_pos.x(), global_pos.y())
@@ -399,12 +469,24 @@ class GameWindow(QMainWindow):
         """Update drop physics if dropping"""
         if self.state_machine.current_state == State.DROPPING:
             current_time = pygame.time.get_ticks()
-            screen = QApplication.primaryScreen().geometry()
-            x, y, is_complete = self.drag_handler.update_drop(
+            bounds = self._get_platform_union_bounds()
+            left = bounds[0]
+            movement_width = max(self.window_size, bounds[2] - bounds[0])
+
+            self.baseline_y = self._get_landing_baseline(self.drag_handler.drop_x, self.drag_handler.drop_y)
+            self.drag_handler.baseline_y = self.baseline_y
+
+            # Drag physics is zero-based; map global position into union-local space.
+            self.drag_handler.drop_x -= left
+            x_local, y, is_complete = self.drag_handler.update_drop(
                 current_time,
-                screen.width(),
+                movement_width,
                 self.window_size
             )
+            self.drag_handler.drop_x += left
+
+            x = x_local + left
+            x, y = self._clamp_position_to_bounds(x, y, bounds, clamp_top=False)
 
             # Update window position (both X and Y)
             self.move(x, y)
@@ -419,6 +501,277 @@ class GameWindow(QMainWindow):
                     self.state_machine.transition_to(State.WALKING)
                 else:
                     self.state_machine.transition_to(State.IDLE)
+
+    def _get_platform_union_bounds(self):
+        """Return union bounds for all usable windows, or virtual desktop as fallback."""
+        if self.window_union_bounds:
+            return self.window_union_bounds
+        return self._get_virtual_screen_bounds()
+
+    def _get_virtual_screen_bounds(self):
+        """Return virtual desktop bounds (all monitors)."""
+        if sys.platform == 'win32':
+            user32 = ctypes.windll.user32
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            left = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            top = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            return (left, top, left + width, top + height)
+
+        screen = QApplication.primaryScreen().geometry()
+        return (0, 0, screen.width(), screen.height())
+
+    def _get_baseline_y_for_bounds(self, bounds):
+        """Compute baseline from a window bounds tuple."""
+        top = bounds[1]
+        bottom = bounds[3]
+        center_x = (bounds[0] + bounds[2]) // 2
+        probe_y = max(top, min(bottom - 1, top + self.window_size))
+        monitor_taskbar_baseline = self._get_taskbar_baseline_for_point(center_x, probe_y)
+
+        # Preserve elevated-window platforms while snapping bottom windows to taskbar level.
+        window_baseline = bottom - self.window_size
+        if abs(window_baseline - monitor_taskbar_baseline) <= 120:
+            return max(top, min(monitor_taskbar_baseline, bottom - self.window_size))
+
+        return max(top, min(window_baseline, bottom - self.window_size))
+
+    def _get_taskbar_baseline_for_point(self, x, y):
+        """Return baseline aligned with the monitor work area (taskbar-adjusted)."""
+        work_area = self._get_monitor_work_area_for_point(x, y)
+        return work_area[3] - self.window_size
+
+    def _get_monitor_work_area_for_point(self, x, y):
+        """Get monitor work area for a point, using Win32 APIs on Windows."""
+        if sys.platform != 'win32':
+            bounds = self._get_virtual_screen_bounds()
+            return bounds
+
+        try:
+            MONITOR_DEFAULTTONEAREST = 2
+
+            class _MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", wintypes.RECT),
+                    ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            pt = wintypes.POINT(int(x), int(y))
+            monitor = ctypes.windll.user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+            if not monitor:
+                return self._get_virtual_screen_bounds()
+
+            monitor_info = _MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(_MONITORINFO)
+            ok = ctypes.windll.user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info))
+            if not ok:
+                return self._get_virtual_screen_bounds()
+
+            work = monitor_info.rcWork
+            return (work.left, work.top, work.right, work.bottom)
+        except Exception:
+            return self._get_virtual_screen_bounds()
+
+    def _x_in_bounds(self, x, bounds):
+        """Return True if x can be inside bounds for current sprite window size."""
+        return bounds[0] <= x <= max(bounds[0], bounds[2] - self.window_size)
+
+    def _distance_to_x_band(self, x, bounds):
+        """Distance from x to nearest horizontal edge of a platform bounds."""
+        left = bounds[0]
+        right = max(bounds[0], bounds[2] - self.window_size)
+        if left <= x <= right:
+            return 0
+        return min(abs(x - left), abs(x - right))
+
+    def _vertical_overlap(self, a, b):
+        """Vertical overlap in pixels between two bounds."""
+        return max(0, min(a[3], b[3]) - max(a[1], b[1]))
+
+    def _horizontal_gap(self, a, b):
+        """Horizontal gap in pixels between two bounds (0 when overlapping)."""
+        if a[2] < b[0]:
+            return b[0] - a[2]
+        if b[2] < a[0]:
+            return a[0] - b[2]
+        return 0
+
+    def _collect_side_by_side_lane_platforms(self, selected, selected_baseline, platforms):
+        """Collect connected side-by-side platforms for a shared walking lane."""
+        lane = [selected]
+        queue = [selected]
+        max_neighbor_gap = 80
+
+        while queue:
+            current = queue.pop(0)
+            for candidate in platforms:
+                if candidate in lane:
+                    continue
+
+                candidate_baseline = self._get_baseline_y_for_bounds(candidate)
+                if abs(candidate_baseline - selected_baseline) > self.platform_baseline_tolerance_px:
+                    continue
+
+                vertical_overlap = self._vertical_overlap(current, candidate)
+                if vertical_overlap < self.window_size // 2:
+                    continue
+
+                if self._horizontal_gap(current, candidate) > max_neighbor_gap:
+                    continue
+
+                lane.append(candidate)
+                queue.append(candidate)
+
+        return lane
+
+    def _get_walk_lane(self, x, current_baseline):
+        """Get walking lane baseline and horizontal limits for current position."""
+        platforms = self.window_platforms
+        if not platforms:
+            bounds = self._get_platform_union_bounds()
+            baseline = self._get_baseline_y_for_bounds(bounds)
+            return baseline, bounds[0], max(bounds[0], bounds[2] - self.window_size)
+
+        # Keep walking on the same vertical level after landing; don't auto-fall to lower lanes.
+        same_level_platforms = [
+            bounds for bounds in platforms
+            if abs(self._get_baseline_y_for_bounds(bounds) - current_baseline) <= self.platform_baseline_tolerance_px
+        ]
+
+        if same_level_platforms:
+            candidates = [bounds for bounds in same_level_platforms if self._x_in_bounds(x, bounds)]
+            if not candidates:
+                candidates = [min(same_level_platforms, key=lambda b: self._distance_to_x_band(x, b))]
+        else:
+            # Fallback when current level disappeared (window closed/moved).
+            candidates = [bounds for bounds in platforms if self._x_in_bounds(x, bounds)]
+            if not candidates:
+                candidates = [min(platforms, key=lambda b: self._distance_to_x_band(x, b))]
+
+        selected = min(
+            candidates,
+            key=lambda b: abs(self._get_baseline_y_for_bounds(b) - current_baseline)
+        )
+        selected_baseline = self._get_baseline_y_for_bounds(selected)
+
+        lane_platforms = self._collect_side_by_side_lane_platforms(selected, selected_baseline, platforms)
+
+        min_x = min(bounds[0] for bounds in lane_platforms)
+        max_x = max(bounds[2] - self.window_size for bounds in lane_platforms)
+        return selected_baseline, min_x, max(min_x, max_x)
+
+    def _get_landing_baseline(self, x, current_y):
+        """Choose landing baseline for x, preferring the closest platform below current y."""
+        matching_platforms = [bounds for bounds in self.window_platforms if self._x_in_bounds(x, bounds)]
+        if not matching_platforms:
+            return self._get_baseline_y_for_bounds(self._get_platform_union_bounds())
+
+        below_or_equal = [
+            self._get_baseline_y_for_bounds(bounds)
+            for bounds in matching_platforms
+            if self._get_baseline_y_for_bounds(bounds) >= current_y - 1
+        ]
+        if below_or_equal:
+            return min(below_or_equal)
+
+        return max(self._get_baseline_y_for_bounds(bounds) for bounds in matching_platforms)
+
+    def _clamp_position_to_bounds(self, x, y, bounds, clamp_top=True):
+        """Clamp window position to bounds while optionally allowing movement above top edge."""
+        min_x = bounds[0]
+        max_x = max(bounds[0], bounds[2] - self.window_size)
+        min_y = bounds[1] if clamp_top else -10_000_000
+        max_y = max(bounds[1], bounds[3] - self.window_size)
+        clamped_x = max(min_x, min(max_x, int(x)))
+        clamped_y = max(min_y, min(max_y, int(y)))
+        return clamped_x, clamped_y
+
+    def _refresh_active_window_bounds(self, force=False):
+        """Refresh visible top-level windows used as movement platforms."""
+        if sys.platform != 'win32':
+            self.window_platforms = []
+            self.window_union_bounds = None
+            return
+
+        now_ms = pygame.time.get_ticks()
+        if not force and now_ms - self.last_window_bounds_update_ms < self.window_bounds_update_interval_ms:
+            return
+
+        self.last_window_bounds_update_ms = now_ms
+
+        try:
+            import win32gui  # type: ignore[import-not-found]
+
+            own_hwnd = int(self.winId())
+            platforms = []
+
+            def enum_handler(hwnd, _):
+                if hwnd == own_hwnd:
+                    return True
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                if win32gui.IsIconic(hwnd):
+                    return True
+
+                bounds = self._get_window_bounds_win32(hwnd, win32gui)
+                if bounds is None:
+                    return True
+
+                left, top, right, bottom = bounds
+                if right - left < self.window_size or bottom - top < self.window_size:
+                    return True
+
+                platforms.append(bounds)
+                return True
+
+            win32gui.EnumWindows(enum_handler, None)
+
+            if not platforms:
+                self.window_platforms = []
+                self.window_union_bounds = None
+                return
+
+            unique_platforms = list(dict.fromkeys(platforms))
+            self.window_platforms = sorted(unique_platforms, key=lambda rect: (rect[1], rect[0]))
+
+            min_left = min(rect[0] for rect in self.window_platforms)
+            min_top = min(rect[1] for rect in self.window_platforms)
+            max_right = max(rect[2] for rect in self.window_platforms)
+            max_bottom = max(rect[3] for rect in self.window_platforms)
+            self.window_union_bounds = (min_left, min_top, max_right, max_bottom)
+        except Exception as exc:
+            print(f"[GAME] Could not refresh window bounds: {exc}")
+
+    def _get_window_bounds_win32(self, hwnd, win32gui):
+        """Get window bounds, preferring DWM extended frame bounds."""
+        try:
+            rect = wintypes.RECT()
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+            result = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_EXTENDED_FRAME_BOUNDS,
+                ctypes.byref(rect),
+                ctypes.sizeof(rect)
+            )
+            if result == 0 and rect.right > rect.left and rect.bottom > rect.top:
+                return (rect.left, rect.top, rect.right, rect.bottom)
+        except Exception:
+            pass
+
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            if right > left and bottom > top:
+                return (left, top, right, bottom)
+        except Exception:
+            return None
+
+        return None
 
     def _update_transparency_mask(self):
         """Update window mask to make magenta pixels transparent"""
