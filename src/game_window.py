@@ -19,6 +19,8 @@ class GameWindow(QMainWindow):
         self.config = config
         self.state_machine = state_machine
         self.spawn_from = spawn_from  # Optional (x, y) position to spawn from
+        self.last_topmost_enforce_ms = 0
+        self.topmost_enforce_interval_ms = 500
 
         print("[GAME] Initializing game window...")
 
@@ -190,6 +192,8 @@ class GameWindow(QMainWindow):
 
     def update_game(self):
         """Main Pygame update loop (called every frame)"""
+        self._maybe_enforce_topmost()
+
         # Process events
         for event in pygame.event.get():
             self._handle_event(event)
@@ -456,6 +460,49 @@ class GameWindow(QMainWindow):
         else:
             print("[GAME] Showing window")
             self.show()
+            self._ensure_on_top()
+
+    def showEvent(self, event):
+        """Re-assert topmost when the window is shown."""
+        super().showEvent(event)
+        self._ensure_on_top()
+
+    def _maybe_enforce_topmost(self):
+        """Periodically enforce always-on-top to recover from z-order loss."""
+        if not self.isVisible() or self.state_machine.current_state == State.HIDDEN:
+            return
+
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_topmost_enforce_ms >= self.topmost_enforce_interval_ms:
+            self._ensure_on_top()
+            self.last_topmost_enforce_ms = current_time
+
+    def _ensure_on_top(self):
+        """Keep window above other windows using Qt and a Win32 fallback."""
+        self.raise_()
+
+        # Reassert with Win32 to prevent other regular windows from covering the minion.
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                HWND_TOPMOST = -1
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_NOACTIVATE = 0x0010
+                SWP_SHOWWINDOW = 0x0040
+
+                ctypes.windll.user32.SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                )
+            except Exception as exc:
+                print(f"[GAME] Failed to enforce topmost via Win32: {exc}")
 
     def mousePressEvent(self, event):
         """Handle mouse press events at Qt level (works with mask, bypasses pygame transparency)"""
