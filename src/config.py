@@ -28,7 +28,7 @@ class Config:
         "action_timeout_sec": 30,      # Timeout for other actions
         "behavior_mode": "claude",     # Behavior mode: "claude" or "pet"
         "dragged_animation_enabled": False,  # Use animated sprite when dragged
-        "lock_by_screen": False  # Restrict walking to current monitor only
+        "walk_freely": True  # Allow walking across all monitors
     }
 
     def __init__(self, config_file="config.json"):
@@ -188,14 +188,14 @@ class Config:
         self.config["behavior_mode"] = value
 
     @property
-    def lock_by_screen(self):
-        """Get whether walking is locked to current monitor."""
-        return self.config.get("lock_by_screen", False)
+    def walk_freely(self):
+        """Get whether walking is allowed across all monitors."""
+        return self.config.get("walk_freely", True)
 
-    @lock_by_screen.setter
-    def lock_by_screen(self, value):
-        """Set whether walking is locked to current monitor."""
-        self.config["lock_by_screen"] = value
+    @walk_freely.setter
+    def walk_freely(self, value):
+        """Set whether walking is allowed across all monitors."""
+        self.config["walk_freely"] = value
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.

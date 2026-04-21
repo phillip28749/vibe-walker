@@ -634,8 +634,8 @@ class GameWindow(QMainWindow):
         """Get walking lane baseline and horizontal limits for current position."""
         baseline = self._get_taskbar_baseline_for_point(x, current_baseline)
 
-        # If lock_by_screen is enabled, restrict to current monitor only
-        if self.config.lock_by_screen:
+        # If walk_freely is disabled, restrict to current monitor only
+        if not self.config.walk_freely:
             bounds = self._get_monitor_work_area_for_point(x, current_baseline)
         else:
             # Walk across the full virtual screen

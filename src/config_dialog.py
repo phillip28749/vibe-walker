@@ -22,7 +22,7 @@ class ConfigDialog(QDialog):
         'reactive_mode_enabled': 'Show/hide minion based on Claude activity',
         'behavior_mode': 'Claude mode: responds to activity | Pet mode: random walking',
         'random_spawn_enabled': 'Randomize spawn position (if disabled, spawns centered)',
-        'lock_by_screen': 'Restrict walking to current monitor only (prevents walking across monitors)',
+        'walk_freely': 'Allow walking freely across all monitors (if disabled, stays on current monitor)',
         'window_bottom_offset': 'Distance from bottom of screen to window edge',
         'baseline_y_offset': 'Vertical offset for character baseline position',
         'animation_fps': 'Frames per second for sprite animations',
@@ -171,17 +171,11 @@ class ConfigDialog(QDialog):
         layout.addRow("Random Spawn Position:", random_spawn)
         self.widgets['random_spawn_enabled'] = random_spawn
 
-        # lock_by_screen
-        lock_by_screen = QCheckBox()
-        lock_by_screen.setToolTip(self.TOOLTIPS['lock_by_screen'])
-        layout.addRow("Lock by Screen:", lock_by_screen)
-        self.widgets['lock_by_screen'] = lock_by_screen
-
-        # dragged_animation_enabled
-        dragged_animation = QCheckBox()
-        dragged_animation.setToolTip(self.TOOLTIPS['dragged_animation_enabled'])
-        layout.addRow("Dragged Animation:", dragged_animation)
-        self.widgets['dragged_animation_enabled'] = dragged_animation
+        # walk_freely
+        walk_freely = QCheckBox()
+        walk_freely.setToolTip(self.TOOLTIPS['walk_freely'])
+        layout.addRow("Walk Freely:", walk_freely)
+        self.widgets['walk_freely'] = walk_freely
 
         widget.setLayout(layout)
         return widget
