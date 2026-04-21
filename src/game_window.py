@@ -469,7 +469,7 @@ class GameWindow(QMainWindow):
         """Update drop physics if dropping"""
         if self.state_machine.current_state == State.DROPPING:
             current_time = pygame.time.get_ticks()
-            bounds = self._get_platform_union_bounds()
+            bounds = self._get_virtual_screen_bounds()
             left = bounds[0]
             movement_width = max(self.window_size, bounds[2] - bounds[0])
 
@@ -632,55 +632,15 @@ class GameWindow(QMainWindow):
 
     def _get_walk_lane(self, x, current_baseline):
         """Get walking lane baseline and horizontal limits for current position."""
-        platforms = self.window_platforms
-        if not platforms:
-            bounds = self._get_platform_union_bounds()
-            baseline = self._get_baseline_y_for_bounds(bounds)
-            return baseline, bounds[0], max(bounds[0], bounds[2] - self.window_size)
-
-        # Keep walking on the same vertical level after landing; don't auto-fall to lower lanes.
-        same_level_platforms = [
-            bounds for bounds in platforms
-            if abs(self._get_baseline_y_for_bounds(bounds) - current_baseline) <= self.platform_baseline_tolerance_px
-        ]
-
-        if same_level_platforms:
-            candidates = [bounds for bounds in same_level_platforms if self._x_in_bounds(x, bounds)]
-            if not candidates:
-                candidates = [min(same_level_platforms, key=lambda b: self._distance_to_x_band(x, b))]
-        else:
-            # Fallback when current level disappeared (window closed/moved).
-            candidates = [bounds for bounds in platforms if self._x_in_bounds(x, bounds)]
-            if not candidates:
-                candidates = [min(platforms, key=lambda b: self._distance_to_x_band(x, b))]
-
-        selected = min(
-            candidates,
-            key=lambda b: abs(self._get_baseline_y_for_bounds(b) - current_baseline)
-        )
-        selected_baseline = self._get_baseline_y_for_bounds(selected)
-
-        lane_platforms = self._collect_side_by_side_lane_platforms(selected, selected_baseline, platforms)
-
-        min_x = min(bounds[0] for bounds in lane_platforms)
-        max_x = max(bounds[2] - self.window_size for bounds in lane_platforms)
-        return selected_baseline, min_x, max(min_x, max_x)
+        # Walk across the full virtual screen at taskbar baseline
+        bounds = self._get_virtual_screen_bounds()
+        baseline = self._get_taskbar_baseline_for_point(x, current_baseline)
+        return baseline, bounds[0], max(bounds[0], bounds[2] - self.window_size)
 
     def _get_landing_baseline(self, x, current_y):
-        """Choose landing baseline for x, preferring the closest platform below current y."""
-        matching_platforms = [bounds for bounds in self.window_platforms if self._x_in_bounds(x, bounds)]
-        if not matching_platforms:
-            return self._get_baseline_y_for_bounds(self._get_platform_union_bounds())
-
-        below_or_equal = [
-            self._get_baseline_y_for_bounds(bounds)
-            for bounds in matching_platforms
-            if self._get_baseline_y_for_bounds(bounds) >= current_y - 1
-        ]
-        if below_or_equal:
-            return min(below_or_equal)
-
-        return max(self._get_baseline_y_for_bounds(bounds) for bounds in matching_platforms)
+        """Choose landing baseline for x, always landing at the screen/taskbar bottom."""
+        # Always land at the taskbar baseline instead of on other windows
+        return self._get_taskbar_baseline_for_point(x, current_y)
 
     def _clamp_position_to_bounds(self, x, y, bounds, clamp_top=True):
         """Clamp window position to bounds while optionally allowing movement above top edge."""
