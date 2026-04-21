@@ -27,7 +27,8 @@ class Config:
         "permission_timeout_sec": 60,  # Timeout for permission dialogs
         "action_timeout_sec": 30,      # Timeout for other actions
         "behavior_mode": "claude",     # Behavior mode: "claude" or "pet"
-        "dragged_animation_enabled": False  # Use animated sprite when dragged
+        "dragged_animation_enabled": False,  # Use animated sprite when dragged
+        "lock_by_screen": False  # Restrict walking to current monitor only
     }
 
     def __init__(self, config_file="config.json"):
@@ -185,6 +186,16 @@ class Config:
         if value not in ["claude", "pet"]:
             raise ValueError(f"Invalid behavior mode: {value}")
         self.config["behavior_mode"] = value
+
+    @property
+    def lock_by_screen(self):
+        """Get whether walking is locked to current monitor."""
+        return self.config.get("lock_by_screen", False)
+
+    @lock_by_screen.setter
+    def lock_by_screen(self, value):
+        """Set whether walking is locked to current monitor."""
+        self.config["lock_by_screen"] = value
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.

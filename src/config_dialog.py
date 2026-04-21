@@ -22,6 +22,7 @@ class ConfigDialog(QDialog):
         'reactive_mode_enabled': 'Show/hide minion based on Claude activity',
         'behavior_mode': 'Claude mode: responds to activity | Pet mode: random walking',
         'random_spawn_enabled': 'Randomize spawn position (if disabled, spawns centered)',
+        'lock_by_screen': 'Restrict walking to current monitor only (prevents walking across monitors)',
         'window_bottom_offset': 'Distance from bottom of screen to window edge',
         'baseline_y_offset': 'Vertical offset for character baseline position',
         'animation_fps': 'Frames per second for sprite animations',
@@ -169,6 +170,12 @@ class ConfigDialog(QDialog):
         random_spawn.setToolTip(self.TOOLTIPS['random_spawn_enabled'])
         layout.addRow("Random Spawn Position:", random_spawn)
         self.widgets['random_spawn_enabled'] = random_spawn
+
+        # lock_by_screen
+        lock_by_screen = QCheckBox()
+        lock_by_screen.setToolTip(self.TOOLTIPS['lock_by_screen'])
+        layout.addRow("Lock by Screen:", lock_by_screen)
+        self.widgets['lock_by_screen'] = lock_by_screen
 
         # dragged_animation_enabled
         dragged_animation = QCheckBox()
