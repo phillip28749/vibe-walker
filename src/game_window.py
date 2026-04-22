@@ -398,7 +398,7 @@ class GameWindow(QMainWindow):
                     if colliding_window is not None:
                         # Landed on a window - position at its top surface
                         window_bounds = colliding_window["bounds"]
-                        landing_y = window_bounds[1] - self.config.sprite_size
+                        landing_y = max(0, window_bounds[1] - self.config.sprite_size)  # Clamp to screen top
                         self.move(current_x, landing_y)
                         self.baseline_y = landing_y
                         self.walking_on_window = True
@@ -621,7 +621,7 @@ class GameWindow(QMainWindow):
                 if colliding_window is not None:
                     # Landed on a window - position at its top surface
                     window_bounds = colliding_window["bounds"]
-                    landing_y = window_bounds[1] - self.config.sprite_size  # Window top
+                    landing_y = max(0, window_bounds[1] - self.config.sprite_size)  # Clamp to screen top
                     self.move(self.window_x, landing_y)
                     self.baseline_y = landing_y
                     self.walking_on_window = True
@@ -984,8 +984,11 @@ class GameWindow(QMainWindow):
         # Get pygame surface data as RGBA
         surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
 
+        # Get actual surface dimensions (may differ if window was resized)
+        surf_width, surf_height = self.pygame_screen.get_size()
+
         # Convert to numpy array for vectorized operations
-        pixels = np.frombuffer(surf_data, dtype=np.uint8).reshape((self.window_size, self.window_size, 4))
+        pixels = np.frombuffer(surf_data, dtype=np.uint8).reshape((surf_height, surf_width, 4))
 
         # Vectorized magenta detection with threshold (R=255, G=0, B=255, threshold=10)
         r, g, b = pixels[:, :, 0], pixels[:, :, 1], pixels[:, :, 2]
