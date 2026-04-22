@@ -839,39 +839,41 @@ class GameWindow(QMainWindow):
 
         return None
 
-    def _sprite_is_inside_window(self, x, y, window_bounds):
-        """Check if sprite at (x, y) is completely inside a window.
-
-        Returns True if sprite center or significant portion is within window bounds.
-        """
-        sprite_bounds = self._sprite_bounds_at_position(x, y)
-        window_left, window_top, window_right, window_bottom = window_bounds
-
-        # Check if sprite center is inside the window
-        sprite_center_x = (sprite_bounds[0] + sprite_bounds[2]) / 2
-        sprite_center_y = (sprite_bounds[1] + sprite_bounds[3]) / 2
-
-        return (window_left < sprite_center_x < window_right and
-                window_top < sprite_center_y < window_bottom)
-
     def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
-        """Check if moving from current_x to next_x at baseline_y crosses a window boundary.
+        """Check if moving from current_x to next_x at baseline_y crosses a window left/right boundary.
 
-        Only checks collision against windows the mob is NOT already inside.
-        Returns True if safe to move, False if collision detected at boundary.
+        Only checks left/right edges (X-axis), allowing vertical overlap with windows.
+        Mob walks ON TOP of windows, colliding only at left/right edges.
+        Returns True if safe to move, False if collision detected.
         """
-        next_bounds = self._sprite_bounds_at_position(next_x, baseline_y)
-
         for window in self.window_platforms:
             window_bounds = window["bounds"]
+            window_left, window_top, window_right, window_bottom = window_bounds
 
-            # Skip windows we're already inside - allow free movement within them
-            if self._sprite_is_inside_window(current_x, baseline_y, window_bounds):
+            # Only check collision if we're at the same Y level as the window (walking on it)
+            # Window top is where we walk; tolerance allows slight height variation
+            window_walk_y = window_top - self.config.sprite_size
+            height_tolerance = 20  # pixels of tolerance for Y position
+
+            if abs(baseline_y - window_walk_y) > height_tolerance:
+                # Not at this window's level, skip it
                 continue
 
-            # Only check collision at boundaries for windows we're outside of
-            if self._aabb_intersects(next_bounds, window_bounds, margin):
-                return False
+            # Check if we're horizontally in range of the window
+            current_x_clamped = max(window_left, min(current_x, window_right - self.config.sprite_size))
+            next_x_clamped = max(window_left, min(next_x, window_right - self.config.sprite_size))
+
+            # Check if moving would cross left or right boundary
+            if window_left <= current_x_clamped < window_right - self.config.sprite_size:
+                # We're between the edges, can move freely
+                continue
+
+            # Check boundary collision (trying to cross left or right edge)
+            if next_x < window_left - margin or next_x > window_right - self.config.sprite_size + margin:
+                # Trying to exit the window horizontally
+                if window_left - margin <= current_x <= window_right - self.config.sprite_size + margin:
+                    # We're at the edge trying to go further - collision
+                    return False
 
         return True
 
