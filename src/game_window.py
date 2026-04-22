@@ -529,7 +529,6 @@ class GameWindow(QMainWindow):
                     # Collision detected - reverse direction instead of moving forward
                     self.walk_direction = -self.walk_direction
                     self.sprite.set_walk_direction(self.walk_direction)
-                    print(f"[GAME] Collision detected at x={next_x}, reversing direction")
                 else:
                     # No collision - update position
                     self.window_x = next_x
@@ -840,12 +839,41 @@ class GameWindow(QMainWindow):
 
         return None
 
-    def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
-        """Check if moving from current_x to next_x at baseline_y is collision-free.
+    def _sprite_is_inside_window(self, x, y, window_bounds):
+        """Check if sprite at (x, y) is completely inside a window.
 
-        Returns True if safe to move, False if collision detected.
+        Returns True if sprite center or significant portion is within window bounds.
         """
-        return self._get_colliding_window_at_position(next_x, baseline_y, margin) is None
+        sprite_bounds = self._sprite_bounds_at_position(x, y)
+        window_left, window_top, window_right, window_bottom = window_bounds
+
+        # Check if sprite center is inside the window
+        sprite_center_x = (sprite_bounds[0] + sprite_bounds[2]) / 2
+        sprite_center_y = (sprite_bounds[1] + sprite_bounds[3]) / 2
+
+        return (window_left < sprite_center_x < window_right and
+                window_top < sprite_center_y < window_bottom)
+
+    def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
+        """Check if moving from current_x to next_x at baseline_y crosses a window boundary.
+
+        Only checks collision against windows the mob is NOT already inside.
+        Returns True if safe to move, False if collision detected at boundary.
+        """
+        next_bounds = self._sprite_bounds_at_position(next_x, baseline_y)
+
+        for window in self.window_platforms:
+            window_bounds = window["bounds"]
+
+            # Skip windows we're already inside - allow free movement within them
+            if self._sprite_is_inside_window(current_x, baseline_y, window_bounds):
+                continue
+
+            # Only check collision at boundaries for windows we're outside of
+            if self._aabb_intersects(next_bounds, window_bounds, margin):
+                return False
+
+        return True
 
     def _refresh_active_window_bounds(self, force=False):
         """Refresh visible top-level windows used as movement platforms."""
