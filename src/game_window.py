@@ -204,6 +204,12 @@ class GameWindow(QMainWindow):
         self.pet_mode_state_elapsed = 0
         self.pet_mode_target_state = State.IDLE
 
+        # Window walking state tracking
+        self.walking_on_window = False  # True if currently on a window surface
+        self.walking_on_window_hwnd = None  # HWND of the window we're walking on
+        self.current_walking_baseline = self.baseline_y  # Current baseline (taskbar or window top)
+        self.previous_walking_baseline = self.baseline_y  # Previous baseline for transition detection
+
         # Start pet mode if configured
         if self.behavior_mode == "pet":
             self._start_pet_mode()
@@ -387,6 +393,19 @@ class GameWindow(QMainWindow):
                     # Already at baseline with no throw velocity
                     self.move(current_x, landing_baseline)
                     self.drag_handler.mouse_history.clear()
+
+                    # Check if landed on a window
+                    colliding_window = self._get_colliding_window_at_position(current_x, landing_baseline, margin=0)
+                    if colliding_window is not None:
+                        self.walking_on_window = True
+                        self.walking_on_window_hwnd = colliding_window["hwnd"]
+                        self.current_walking_baseline = colliding_window["bounds"][1]  # Window top
+                        print(f"[GAME] Placed on window at baseline {self.current_walking_baseline}")
+                    else:
+                        self.walking_on_window = False
+                        self.walking_on_window_hwnd = None
+                        self.current_walking_baseline = landing_baseline
+
                     if self.claude_active:
                         self.state_machine.transition_to(State.WALKING)
                     else:
@@ -499,9 +518,24 @@ class GameWindow(QMainWindow):
             # Scale movement speed with sprite size (base size = 69px)
             self.config.scale_factor = self.config.sprite_size / 69.0
             scaled_speed = self.config.movement_speed_px * self.config.scale_factor
-            self.window_x += self.walk_direction * scaled_speed
+            next_x = self.window_x + self.walk_direction * scaled_speed
 
             baseline_y, min_x, max_x = self._get_walk_lane(self.window_x, self.baseline_y)
+
+            # Check for collision with windows while walking
+            if self.config.window_collision_enabled:
+                margin = self.config.collision_safe_margin
+                if not self._is_position_valid_for_walking(self.window_x, next_x, baseline_y, margin):
+                    # Collision detected - reverse direction instead of moving forward
+                    self.walk_direction = -self.walk_direction
+                    self.sprite.set_walk_direction(self.walk_direction)
+                    print(f"[GAME] Collision detected at x={next_x}, reversing direction")
+                else:
+                    # No collision - update position
+                    self.window_x = next_x
+            else:
+                # Collision detection disabled, always move forward
+                self.window_x = next_x
 
             # Check current lane edges (side-by-side windows share a lane)
             if self.window_x <= min_x:
@@ -576,6 +610,18 @@ class GameWindow(QMainWindow):
             if is_complete:
                 # Drop complete, return to baseline
                 self.move(self.window_x, self.baseline_y)
+
+                # Check if landed on a window
+                colliding_window = self._get_colliding_window_at_position(self.window_x, self.baseline_y, margin=0)
+                if colliding_window is not None:
+                    self.walking_on_window = True
+                    self.walking_on_window_hwnd = colliding_window["hwnd"]
+                    self.current_walking_baseline = colliding_window["bounds"][1]  # Window top
+                    print(f"[GAME] Landed on window at baseline {self.current_walking_baseline}")
+                else:
+                    self.walking_on_window = False
+                    self.walking_on_window_hwnd = None
+                    self.current_walking_baseline = self.baseline_y
 
                 # Transition to idle or walking based on Claude state
                 if self.claude_active:
@@ -739,6 +785,68 @@ class GameWindow(QMainWindow):
         clamped_y = max(min_y, min(max_y, int(y)))
         return clamped_x, clamped_y
 
+    def _get_window_z_order_index(self, hwnd):
+        """Get z-order index for a window (0 = topmost, higher = further back)."""
+        try:
+            user32 = ctypes.windll.user32
+            z_index = 0
+            top_hwnd = user32.GetTopWindow(0)
+
+            while top_hwnd:
+                if top_hwnd == hwnd:
+                    return z_index
+                top_hwnd = user32.GetWindow(top_hwnd, 2)  # GW_HWNDNEXT = 2
+                z_index += 1
+
+            return 1000  # Not found, assign high value
+        except Exception:
+            return 1000
+
+    def _sprite_bounds_at_position(self, x, y):
+        """Get sprite bounding box at a given screen position."""
+        left = x + self.sprite.rect.x
+        top = y + self.sprite.rect.y
+        right = left + self.config.sprite_size
+        bottom = top + self.config.sprite_size
+        return (left, top, right, bottom)
+
+    def _aabb_intersects(self, bounds_a, bounds_b, margin=0):
+        """Check if two AABB rectangles overlap with optional margin.
+
+        Returns True if rectangles overlap (considering margin).
+        bounds: (left, top, right, bottom)
+        margin: extra pixels to apply as buffer zone
+        """
+        a_left, a_top, a_right, a_bottom = bounds_a
+        b_left, b_top, b_right, b_bottom = bounds_b
+
+        return (a_left - margin < b_right + margin and
+                a_right + margin > b_left - margin and
+                a_top - margin < b_bottom + margin and
+                a_bottom + margin > b_top - margin)
+
+    def _get_colliding_window_at_position(self, x, y, margin=2):
+        """Find topmost window colliding with sprite at position (x, y).
+
+        Returns the window dict of the topmost colliding window, or None.
+        margin: safe distance in pixels before collision triggers
+        """
+        sprite_bounds = self._sprite_bounds_at_position(x, y)
+
+        for window in self.window_platforms:
+            window_bounds = window["bounds"]
+            if self._aabb_intersects(sprite_bounds, window_bounds, margin):
+                return window
+
+        return None
+
+    def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
+        """Check if moving from current_x to next_x at baseline_y is collision-free.
+
+        Returns True if safe to move, False if collision detected.
+        """
+        return self._get_colliding_window_at_position(next_x, baseline_y, margin) is None
+
     def _refresh_active_window_bounds(self, force=False):
         """Refresh visible top-level windows used as movement platforms."""
         if sys.platform != 'win32':
@@ -774,7 +882,12 @@ class GameWindow(QMainWindow):
                 if right - left < self.window_size or bottom - top < self.window_size:
                     return True
 
-                platforms.append(bounds)
+                z_index = self._get_window_z_order_index(hwnd)
+                platforms.append({
+                    "bounds": bounds,
+                    "hwnd": hwnd,
+                    "z_index": z_index
+                })
                 return True
 
             win32gui.EnumWindows(enum_handler, None)
@@ -784,13 +897,12 @@ class GameWindow(QMainWindow):
                 self.window_union_bounds = None
                 return
 
-            unique_platforms = list(dict.fromkeys(platforms))
-            self.window_platforms = sorted(unique_platforms, key=lambda rect: (rect[1], rect[0]))
+            self.window_platforms = sorted(platforms, key=lambda w: w["z_index"])
 
-            min_left = min(rect[0] for rect in self.window_platforms)
-            min_top = min(rect[1] for rect in self.window_platforms)
-            max_right = max(rect[2] for rect in self.window_platforms)
-            max_bottom = max(rect[3] for rect in self.window_platforms)
+            min_left = min(w["bounds"][0] for w in self.window_platforms)
+            min_top = min(w["bounds"][1] for w in self.window_platforms)
+            max_right = max(w["bounds"][2] for w in self.window_platforms)
+            max_bottom = max(w["bounds"][3] for w in self.window_platforms)
             self.window_union_bounds = (min_left, min_top, max_right, max_bottom)
         except Exception as exc:
             print(f"[GAME] Could not refresh window bounds: {exc}")

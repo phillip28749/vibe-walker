@@ -30,7 +30,10 @@ class Config:
         "action_timeout_sec": 30,      # Timeout for other actions
         "behavior_mode": "claude",     # Behavior mode: "claude" or "pet"
         "dragged_animation_enabled": False,  # Use animated sprite when dragged
-        "walk_freely": True  # Allow walking across all monitors
+        "walk_freely": True,  # Allow walking across all monitors
+        "window_collision_enabled": True,  # Enable collision detection with windows
+        "walk_on_windows_enabled": True,  # Allow mob to walk on window surfaces
+        "collision_safe_margin": 2  # Safe distance in pixels before collision triggers
     }
 
     def __init__(self, config_file="config.json"):
@@ -208,6 +211,36 @@ class Config:
     def walk_freely(self, value):
         """Set whether walking is allowed across all monitors."""
         self.config["walk_freely"] = value
+
+    @property
+    def window_collision_enabled(self):
+        """Get whether window collision detection is enabled."""
+        return self.config.get("window_collision_enabled", True)
+
+    @window_collision_enabled.setter
+    def window_collision_enabled(self, value):
+        """Set whether window collision detection is enabled."""
+        self.config["window_collision_enabled"] = value
+
+    @property
+    def walk_on_windows_enabled(self):
+        """Get whether mob can walk on window surfaces."""
+        return self.config.get("walk_on_windows_enabled", True)
+
+    @walk_on_windows_enabled.setter
+    def walk_on_windows_enabled(self, value):
+        """Set whether mob can walk on window surfaces."""
+        self.config["walk_on_windows_enabled"] = value
+
+    @property
+    def collision_safe_margin(self):
+        """Get safe distance in pixels before collision triggers."""
+        return self.config.get("collision_safe_margin", 2)
+
+    @collision_safe_margin.setter
+    def collision_safe_margin(self, value):
+        """Set safe distance in pixels before collision triggers."""
+        self.config["collision_safe_margin"] = value
 
     def get_sprite_path(self, sprite_name):
         """Get full path to sprite file.
