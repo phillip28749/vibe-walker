@@ -840,40 +840,41 @@ class GameWindow(QMainWindow):
         return None
 
     def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
-        """Check if moving from current_x to next_x at baseline_y crosses a window left/right boundary.
+        """Check if moving from current_x to next_x at baseline_y collides with any window.
 
-        Only checks left/right edges (X-axis), allowing vertical overlap with windows.
-        Mob walks ON TOP of windows, colliding only at left/right edges.
+        Mob walks on desktop and collides when trying to walk through an application window.
+        Only checks collision if the window's height spans the walking level.
         Returns True if safe to move, False if collision detected.
         """
+        if not self.window_platforms:
+            return True
+
         for window in self.window_platforms:
-            window_bounds = window["bounds"]
-            window_left, window_top, window_right, window_bottom = window_bounds
+            window_left, window_top, window_right, window_bottom = window["bounds"]
 
-            # Only check collision if we're at the same Y level as the window (walking on it)
-            # Window top is where we walk; tolerance allows slight height variation
-            window_walk_y = window_top - self.config.sprite_size
-            height_tolerance = 20  # pixels of tolerance for Y position
+            # Check if window's vertical span overlaps with mob's walking height
+            sprite_top = baseline_y
+            sprite_bottom = baseline_y + self.config.sprite_size
 
-            if abs(baseline_y - window_walk_y) > height_tolerance:
-                # Not at this window's level, skip it
+            # No vertical overlap - window doesn't block at this height
+            if sprite_bottom < window_top or sprite_top > window_bottom:
                 continue
 
-            # Check if we're horizontally in range of the window
-            current_x_clamped = max(window_left, min(current_x, window_right - self.config.sprite_size))
-            next_x_clamped = max(window_left, min(next_x, window_right - self.config.sprite_size))
+            # Window spans our walking height - check for collision at window edges
+            sprite_left_at_current = current_x
+            sprite_right_at_current = current_x + self.config.sprite_size
+            sprite_left_at_next = next_x
+            sprite_right_at_next = next_x + self.config.sprite_size
 
-            # Check if moving would cross left or right boundary
-            if window_left <= current_x_clamped < window_right - self.config.sprite_size:
-                # We're between the edges, can move freely
-                continue
+            currently_overlaps = (sprite_right_at_current > window_left and
+                                sprite_left_at_current < window_right)
+            next_overlaps = (sprite_right_at_next > window_left and
+                           sprite_left_at_next < window_right)
 
-            # Check boundary collision (trying to cross left or right edge)
-            if next_x < window_left - margin or next_x > window_right - self.config.sprite_size + margin:
-                # Trying to exit the window horizontally
-                if window_left - margin <= current_x <= window_right - self.config.sprite_size + margin:
-                    # We're at the edge trying to go further - collision
-                    return False
+            # Collision when entering or exiting a window
+            if currently_overlaps != next_overlaps:
+                # Moving from inside to outside or vice versa - collision!
+                return False
 
         return True
 
