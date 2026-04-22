@@ -11,6 +11,8 @@ class Config:
         "poll_interval_ms": 1000,
         "idle_timeout_sec": 7,
         "animation_fps": 7,
+        "drag_transition_fps": 14,
+        "idle_to_walking_fps": 14,
         "movement_speed_px": 2,
         "sprite_size": 69,
         "window_bottom_offset": 50,
@@ -102,6 +104,16 @@ class Config:
     def animation_fps(self):
         """Get animation frames per second."""
         return self.config["animation_fps"]
+
+    @property
+    def drag_transition_fps(self):
+        """Get drag-to-idle / idle-to-drag transition frames per second."""
+        return self.config.get("drag_transition_fps", 14)
+
+    @property
+    def idle_to_walking_fps(self):
+        """Get idle-to-walking / walking-to-idle transition frames per second."""
+        return self.config.get("idle_to_walking_fps", 14)
 
     @property
     def movement_speed_px(self):

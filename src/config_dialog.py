@@ -26,6 +26,8 @@ class ConfigDialog(QDialog):
         'window_bottom_offset': 'Distance from bottom of screen to window edge',
         'baseline_y_offset': 'Vertical offset for character baseline position',
         'animation_fps': 'Frames per second for sprite animations',
+        'drag_transition_fps': 'Frames per second for drag-to-idle and idle-to-drag transitions',
+        'idle_to_walking_fps': 'Frames per second for idle-to-walking and walk-to-idle transitions',
         'pygame_fps': 'Frames per second for game loop rendering',
         'movement_speed_px': 'Movement speed in pixels per frame',
         'drop_duration_ms': 'Duration of drop animation in milliseconds',
@@ -47,6 +49,8 @@ class ConfigDialog(QDialog):
         'window_bottom_offset': (0, 200),
         'baseline_y_offset': (0, 200),
         'animation_fps': (1, 60),
+        'drag_transition_fps': (1, 60),
+        'idle_to_walking_fps': (1, 60),
         'pygame_fps': (30, 120),
         'movement_speed_px': (1, 10),
         'drop_duration_ms': (100, 2000),
@@ -164,6 +168,20 @@ class ConfigDialog(QDialog):
         behavior_mode.setToolTip(self.TOOLTIPS['behavior_mode'])
         layout.addRow("Behavior Mode:", behavior_mode)
         self.widgets['behavior_mode'] = behavior_mode
+
+        # drag_transition_fps
+        drag_transition_fps = QSpinBox()
+        drag_transition_fps.setRange(*self.RANGES['drag_transition_fps'])
+        drag_transition_fps.setToolTip(self.TOOLTIPS['drag_transition_fps'])
+        layout.addRow("Drag Transition FPS:", drag_transition_fps)
+        self.widgets['drag_transition_fps'] = drag_transition_fps
+
+        # idle_to_walking_fps
+        idle_to_walking_fps = QSpinBox()
+        idle_to_walking_fps.setRange(*self.RANGES['idle_to_walking_fps'])
+        idle_to_walking_fps.setToolTip(self.TOOLTIPS['idle_to_walking_fps'])
+        layout.addRow("Idle-to-Walking FPS:", idle_to_walking_fps)
+        self.widgets['idle_to_walking_fps'] = idle_to_walking_fps
 
         # random_spawn_enabled
         random_spawn = QCheckBox()

@@ -14,6 +14,8 @@ def mock_config():
     config.sprite_size = 64
     config.pygame_fps = 60
     config.animation_fps = 7
+    config.drag_transition_fps = 14
+    config.idle_to_walking_fps = 14
     config.movement_speed_px = 2
     config.drop_duration_ms = 500
     config.random_spawn_enabled = False

@@ -160,6 +160,22 @@ class GameWindow(QMainWindow):
         self.appearing_frame_counter = 0
         self.appearing_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
 
+        # Drag-to-idle transition animation state
+        self.drag_to_idle_frame_counter = 0
+        self.drag_to_idle_frame_update_rate = max(1, self.config.pygame_fps // self.config.drag_transition_fps)
+
+        # Idle-to-walking transition animation state
+        self.idle_to_walking_frame_counter = 0
+        self.idle_to_walking_frame_update_rate = max(1, self.config.pygame_fps // self.config.idle_to_walking_fps)
+
+        # Walk-to-idle transition animation state (reuse idle-to-walking speed)
+        self.walk_to_idle_frame_counter = 0
+        self.walk_to_idle_frame_update_rate = self.idle_to_walking_frame_update_rate
+
+        # Idle-to-drag transition animation state
+        self.idle_to_drag_frame_counter = 0
+        self.idle_to_drag_frame_update_rate = self.drag_to_idle_frame_update_rate
+
         # Track window position on screen for walking
         self.window_x = self.initial_window_x
 
@@ -379,6 +395,71 @@ class GameWindow(QMainWindow):
     def _update_sprite(self):
         """Update sprite animation based on state"""
         state = self.state_machine.current_state
+
+        # A new state should interrupt the opposite transition so release can
+        # immediately play drag-to-idle instead of waiting for idle-to-drag.
+        if state == State.IDLE and self.sprite.playing_idle_to_drag:
+            self.sprite.playing_idle_to_drag = False
+            self.sprite.idle_to_drag_frame = 0
+
+        if state == State.DRAGGED and self.sprite.playing_drag_to_idle:
+            self.sprite.playing_drag_to_idle = False
+            self.drag_to_idle_frame_counter = 0
+            self.sprite.drag_to_idle_frame = 0
+
+        if state == State.IDLE and self.sprite.playing_idle_to_walking:
+            self.sprite.playing_idle_to_walking = False
+            self.idle_to_walking_frame_counter = 0
+            self.sprite.idle_to_walking_frame = 0
+
+        if state == State.WALKING and self.sprite.playing_walk_to_idle:
+            self.sprite.playing_walk_to_idle = False
+            self.walk_to_idle_frame_counter = 0
+            self.sprite.walk_to_idle_frame = 0
+
+        # Handle drag-to-idle transition animation
+        if self.sprite.playing_drag_to_idle:
+            self.drag_to_idle_frame_counter += 1
+            if self.drag_to_idle_frame_counter >= self.drag_to_idle_frame_update_rate:
+                self.drag_to_idle_frame_counter = 0
+                self.sprite.update_drag_to_idle_frame()
+            # Refresh image for the current transition frame.
+            self.sprite.update_state(state)
+            # Don't process other state updates while transition is playing
+            return
+
+        # Handle idle-to-walking transition animation
+        if self.sprite.playing_idle_to_walking:
+            self.idle_to_walking_frame_counter += 1
+            if self.idle_to_walking_frame_counter >= self.idle_to_walking_frame_update_rate:
+                self.idle_to_walking_frame_counter = 0
+                self.sprite.update_idle_to_walking_frame()
+            # Refresh image for the current transition frame.
+            self.sprite.update_state(state)
+            # Don't process other state updates while transition is playing
+            return
+
+        # Handle walk-to-idle transition animation
+        if self.sprite.playing_walk_to_idle:
+            self.walk_to_idle_frame_counter += 1
+            if self.walk_to_idle_frame_counter >= self.walk_to_idle_frame_update_rate:
+                self.walk_to_idle_frame_counter = 0
+                self.sprite.update_walk_to_idle_frame()
+            # Refresh image for the current transition frame.
+            self.sprite.update_state(state)
+            # Don't process other state updates while transition is playing
+            return
+
+        # Handle idle-to-drag transition animation
+        if self.sprite.playing_idle_to_drag:
+            self.idle_to_drag_frame_counter += 1
+            if self.idle_to_drag_frame_counter >= self.idle_to_drag_frame_update_rate:
+                self.idle_to_drag_frame_counter = 0
+                self.sprite.update_idle_to_drag_frame()
+            # Refresh image for the current transition frame.
+            self.sprite.update_state(state)
+            # Don't process other state updates while transition is playing
+            return
 
         if state == State.APPEARING:
             # Update appearing animation
