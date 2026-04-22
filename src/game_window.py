@@ -398,7 +398,7 @@ class GameWindow(QMainWindow):
                     if colliding_window is not None:
                         # Landed on a window - position at its top surface
                         window_bounds = colliding_window["bounds"]
-                        landing_y = max(0, window_bounds[1] - self.config.sprite_size)  # Clamp to screen top
+                        landing_y = window_bounds[1]  # Window's top edge
                         self.move(current_x, landing_y)
                         self.baseline_y = landing_y
                         self.walking_on_window = True
@@ -621,7 +621,7 @@ class GameWindow(QMainWindow):
                 if colliding_window is not None:
                     # Landed on a window - position at its top surface
                     window_bounds = colliding_window["bounds"]
-                    landing_y = max(0, window_bounds[1] - self.config.sprite_size)  # Clamp to screen top
+                    landing_y = window_bounds[1]  # Window's top edge
                     self.move(self.window_x, landing_y)
                     self.baseline_y = landing_y
                     self.walking_on_window = True
