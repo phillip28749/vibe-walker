@@ -423,3 +423,109 @@ def test_get_current_window_surface_accepts_tiny_edge_overlap(qapp, mock_config,
         surface = window._get_current_window_surface(x=497, current_baseline=436)
         assert surface is not None
         assert surface["hwnd"] == 13
+
+
+def test_get_current_window_surface_rejects_tracked_window_after_vertical_move(qapp, mock_config, mock_pygame):
+    """Tracked support should be lost once the window moves away from the mob."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.walking_on_window = True
+        window.walking_on_window_hwnd = 21
+        window.window_platforms = [
+            {"bounds": (100, 620, 500, 920), "hwnd": 21, "z_index": 0}
+        ]
+
+        surface = window._get_current_window_surface(x=220, current_baseline=436)
+        assert surface is None
+
+
+def test_update_sprite_starts_drop_when_window_support_is_lost(qapp, mock_config, mock_pygame):
+    """Walking should switch into a drop when the tracked window is no longer under the mob."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        state_machine.transition_to(State.WALKING)
+        window.walking_on_window = True
+        window.walking_on_window_hwnd = 21
+        window.window_x = 220
+        window.baseline_y = 436
+        window.walk_direction = 1
+        window.walk_frame_counter = 0
+        window.walk_frame_update_rate = 999
+        window.sprite.playing_drag_to_idle = False
+        window.sprite.playing_idle_to_walking = False
+        window.sprite.playing_walk_to_idle = False
+        window.sprite.playing_idle_to_drag = False
+        window._get_current_window_surface = Mock(return_value=None)
+        window._start_dropping_from = Mock()
+        window.move(220, 436)
+        window.timer.stop()
+
+        window._update_sprite()
+
+        window._start_dropping_from.assert_called_once()
+
+
+def test_is_window_fully_occluded_detects_hidden_window(qapp, mock_config, mock_pygame):
+    """A window whose sampled points all land on another window is treated as covered."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        fake_win32gui = MagicMock()
+        fake_win32gui.WindowFromPoint.side_effect = lambda point: 2
+        fake_win32gui.GetAncestor.side_effect = lambda hwnd, flag: hwnd
+
+        assert window._is_window_fully_occluded(1, (100, 100, 300, 300), fake_win32gui) is True
+        assert window._is_window_fully_occluded(2, (100, 100, 300, 300), fake_win32gui) is False
+
+
+def test_refresh_active_window_bounds_skips_fully_covered_windows(qapp, mock_config, mock_pygame):
+    """Covered windows should not enter the physics platform list."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.winId = Mock(return_value=99)
+        window._get_window_bounds_win32 = Mock(side_effect=lambda hwnd, _: {
+            1: (100, 100, 300, 300),
+            2: (100, 100, 300, 300),
+        }[hwnd])
+        window._get_window_z_order_index = Mock(side_effect=lambda hwnd: {2: 0, 1: 1}[hwnd])
+
+        fake_win32gui = MagicMock()
+        fake_win32gui.IsWindowVisible.side_effect = lambda hwnd: hwnd in {1, 2}
+        fake_win32gui.IsIconic.return_value = False
+        fake_win32gui.GetClassName.return_value = "application"
+        fake_win32gui.WindowFromPoint.side_effect = lambda point: 2
+        fake_win32gui.GetAncestor.side_effect = lambda hwnd, flag: hwnd
+
+        def enum_windows(callback, _):
+            callback(1, None)
+            callback(2, None)
+
+        fake_win32gui.EnumWindows.side_effect = enum_windows
+
+        mock_windll = MagicMock()
+        mock_windll.user32.GetWindowLongW.return_value = 0
+        mock_windll.user32.GetWindow.return_value = 0
+        mock_windll.dwmapi.DwmGetWindowAttribute.return_value = 1
+
+        with patch.dict('sys.modules', {'win32gui': fake_win32gui}), \
+             patch('src.game_window.ctypes.windll', mock_windll):
+            window._refresh_active_window_bounds(force=True)
+
+        assert [platform["hwnd"] for platform in window.window_platforms] == [2]

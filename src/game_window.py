@@ -492,6 +492,20 @@ class GameWindow(QMainWindow):
                 self.walk_frame_counter = 0
                 self.sprite.update_walk_frame()
 
+            # If the mob is meant to walk on a window but that support moved away,
+            # switch into a real drop from the current position instead of snapping
+            # straight to the taskbar baseline.
+            if self.walking_on_window:
+                current_window_surface = self._get_current_window_surface(self.window_x, self.baseline_y)
+                if current_window_surface is None:
+                    self._start_dropping_from(
+                        int(self.window_x),
+                        int(self.y()),
+                        self.walk_direction * max(1.0, float(self.config.movement_speed_px * (self.config.sprite_size / 69.0))),
+                        0
+                    )
+                    return
+
             # Move window position on screen (not the sprite within the window)
             # Scale movement speed with sprite size (base size = 69px)
             self.config.scale_factor = self.config.sprite_size / 69.0
@@ -1107,6 +1121,9 @@ class GameWindow(QMainWindow):
                 if right - left < self.window_size or bottom - top < self.window_size:
                     return True
 
+                if self._is_window_fully_occluded(hwnd, bounds, win32gui):
+                    return True
+
                 z_index = self._get_window_z_order_index(hwnd)
                 platforms.append({
                     "bounds": bounds,
@@ -1156,6 +1173,40 @@ class GameWindow(QMainWindow):
             return None
 
         return None
+
+    def _is_window_fully_occluded(self, hwnd, bounds, win32gui):
+        """Return True when sampled points inside a window are all covered."""
+        try:
+            left, top, right, bottom = bounds
+            width = right - left
+            height = bottom - top
+            if width <= 2 or height <= 2:
+                return False
+
+            x_offsets = [1, max(2, width // 4), max(2, width // 2), max(2, (3 * width) // 4), width - 2]
+            y_offsets = [1, max(2, height // 4), max(2, height // 2), max(2, (3 * height) // 4), height - 2]
+
+            probe_points = set()
+            for x_offset in x_offsets:
+                x = left + min(width - 2, max(1, x_offset))
+                for y_offset in y_offsets:
+                    y = top + min(height - 2, max(1, y_offset))
+                    probe_points.add((int(x), int(y)))
+
+            get_ancestor = getattr(win32gui, "GetAncestor", None)
+
+            for x, y in probe_points:
+                point_hwnd = win32gui.WindowFromPoint((x, y))
+                if not point_hwnd:
+                    return False
+
+                root_hwnd = get_ancestor(point_hwnd, 2) if get_ancestor else point_hwnd
+                if root_hwnd == hwnd or point_hwnd == hwnd:
+                    return False
+
+            return True
+        except Exception:
+            return False
 
     def _update_transparency_mask(self):
         """Update window mask to make magenta pixels transparent"""
