@@ -872,6 +872,15 @@ class GameWindow(QMainWindow):
             own_hwnd = int(self.winId())
             platforms = []
 
+            # Exclude shell/desktop infrastructure windows that otherwise act as
+            # a full-screen invisible blocker for horizontal movement.
+            ignored_classes = {
+                "progman",
+                "workerw",
+                "shell_traywnd",
+                "shell_secondarytraywnd",
+            }
+
             def enum_handler(hwnd, _):
                 if hwnd == own_hwnd:
                     return True
@@ -879,6 +888,42 @@ class GameWindow(QMainWindow):
                     return True
                 if win32gui.IsIconic(hwnd):
                     return True
+
+                try:
+                    class_name = win32gui.GetClassName(hwnd).lower()
+                    if class_name in ignored_classes:
+                        return True
+                except Exception:
+                    pass
+
+                # Skip tool/owned/cloaked windows. These are typically utility
+                # surfaces (or hidden app internals), not interactive blockers.
+                try:
+                    user32 = ctypes.windll.user32
+                    GWL_EXSTYLE = -20
+                    GW_OWNER = 4
+                    WS_EX_TOOLWINDOW = 0x00000080
+                    DWMWA_CLOAKED = 14
+
+                    ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    if ex_style & WS_EX_TOOLWINDOW:
+                        return True
+
+                    owner = user32.GetWindow(hwnd, GW_OWNER)
+                    if owner:
+                        return True
+
+                    cloaked = wintypes.DWORD(0)
+                    result = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+                        hwnd,
+                        DWMWA_CLOAKED,
+                        ctypes.byref(cloaked),
+                        ctypes.sizeof(cloaked)
+                    )
+                    if result == 0 and cloaked.value != 0:
+                        return True
+                except Exception:
+                    pass
 
                 bounds = self._get_window_bounds_win32(hwnd, win32gui)
                 if bounds is None:
