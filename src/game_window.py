@@ -391,28 +391,8 @@ class GameWindow(QMainWindow):
                     self.state_machine.transition_to(State.DROPPING)
                 else:
                     # Already at baseline with no throw velocity
+                    self.move(current_x, landing_baseline)
                     self.drag_handler.mouse_history.clear()
-
-                    # Check if released on top of a window
-                    colliding_window = self._get_colliding_window_at_position(current_x, current_y, margin=0)
-                    if colliding_window is not None:
-                        # Landed on a window - position at its top surface
-                        window_bounds = colliding_window["bounds"]
-                        landing_y = window_bounds[1]  # Window's top edge
-                        self.move(current_x, landing_y)
-                        self.baseline_y = landing_y
-                        self.walking_on_window = True
-                        self.walking_on_window_hwnd = colliding_window["hwnd"]
-                        self.current_walking_baseline = landing_y
-                        print(f"[GAME] Placed on window at y={landing_y}")
-                    else:
-                        # No window - move to taskbar baseline
-                        self.move(current_x, landing_baseline)
-                        self.baseline_y = landing_baseline
-                        self.walking_on_window = False
-                        self.walking_on_window_hwnd = None
-                        self.current_walking_baseline = landing_baseline
-
                     if self.claude_active:
                         self.state_machine.transition_to(State.WALKING)
                     else:
@@ -614,26 +594,8 @@ class GameWindow(QMainWindow):
             self.window_x = x
 
             if is_complete:
-                # Drop complete - check if landed on any window at current position
-                final_y = y  # The Y position after physics simulation
-                colliding_window = self._get_colliding_window_at_position(self.window_x, final_y, margin=0)
-
-                if colliding_window is not None:
-                    # Landed on a window - position at its top surface
-                    window_bounds = colliding_window["bounds"]
-                    landing_y = window_bounds[1]  # Window's top edge
-                    self.move(self.window_x, landing_y)
-                    self.baseline_y = landing_y
-                    self.walking_on_window = True
-                    self.walking_on_window_hwnd = colliding_window["hwnd"]
-                    self.current_walking_baseline = landing_y
-                    print(f"[GAME] Landed on window at y={landing_y}")
-                else:
-                    # No window - land at taskbar baseline
-                    self.move(self.window_x, self.baseline_y)
-                    self.walking_on_window = False
-                    self.walking_on_window_hwnd = None
-                    self.current_walking_baseline = self.baseline_y
+                # Drop complete, return to baseline
+                self.move(self.window_x, self.baseline_y)
 
                 # Transition to idle or walking based on Claude state
                 if self.claude_active:
