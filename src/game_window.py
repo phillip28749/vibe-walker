@@ -207,6 +207,7 @@ class GameWindow(QMainWindow):
         # Window walking state tracking
         self.walking_on_window = False  # True if currently on a window surface
         self.walking_on_window_hwnd = None  # HWND of the window we're walking on
+        self.drop_support_window_hwnd = None  # Window surface retained during bouncing drop
         self.current_walking_baseline = self.baseline_y  # Current baseline (taskbar or window top)
         self.previous_walking_baseline = self.baseline_y  # Previous baseline for transition detection
 
@@ -377,21 +378,11 @@ class GameWindow(QMainWindow):
 
                 # Drop if above baseline or has significant throw velocity
                 if current_y < landing_baseline or abs(vel_x) > 1 or abs(vel_y) > 1:
-                    # Start drop animation with bouncing and throw physics
-                    current_time = pygame.time.get_ticks()
-                    self.drag_handler.is_dropping = True
-                    self.drag_handler.drop_start_y = current_y
-                    self.drag_handler.drop_start_time = current_time
-                    self.drag_handler.last_update_time = current_time
-                    self.drag_handler.drop_x = float(current_x)
-                    self.drag_handler.drop_y = float(current_y)
-                    self.drag_handler.velocity_x = vel_x
-                    self.drag_handler.velocity_y = vel_y
-                    self.drag_handler.mouse_history.clear()
-                    self.state_machine.transition_to(State.DROPPING)
+                    self._start_dropping_from(current_x, current_y, vel_x, vel_y)
                 else:
                     # Already at baseline with no throw velocity
                     self.move(current_x, landing_baseline)
+                    self._update_window_walking_state(current_x, landing_baseline)
                     self.drag_handler.mouse_history.clear()
                     if self.claude_active:
                         self.state_machine.transition_to(State.WALKING)
@@ -509,6 +500,19 @@ class GameWindow(QMainWindow):
 
             baseline_y, min_x, max_x = self._get_walk_lane(self.window_x, self.baseline_y)
 
+            # When walking on a window top, stepping past an edge should drop.
+            if self.walking_on_window and self._should_drop_from_window_edge(self.window_x, next_x, min_x, max_x):
+                edge_x = min(max(next_x, min_x), max_x)
+                self.window_x = edge_x
+                self.move(int(self.window_x), baseline_y)
+                self._start_dropping_from(
+                    int(self.window_x),
+                    baseline_y,
+                    self.walk_direction * max(1.0, float(scaled_speed)),
+                    0
+                )
+                return
+
             # Check for collision with windows while walking
             if self.config.window_collision_enabled:
                 margin = self.config.collision_safe_margin
@@ -596,12 +600,37 @@ class GameWindow(QMainWindow):
             if is_complete:
                 # Drop complete, return to baseline
                 self.move(self.window_x, self.baseline_y)
+                self._update_window_walking_state(self.window_x, self.baseline_y)
+                self.drop_support_window_hwnd = None
 
                 # Transition to idle or walking based on Claude state
                 if self.claude_active:
                     self.state_machine.transition_to(State.WALKING)
                 else:
                     self.state_machine.transition_to(State.IDLE)
+
+    def _start_dropping_from(self, x, y, vel_x=0, vel_y=0):
+        """Start drop animation with current position and velocity."""
+        current_time = pygame.time.get_ticks()
+        self.drag_handler.is_dropping = True
+        self.drag_handler.drop_start_y = y
+        self.drag_handler.drop_start_time = current_time
+        self.drag_handler.last_update_time = current_time
+        self.drag_handler.drop_x = float(x)
+        self.drag_handler.drop_y = float(y)
+        self.drag_handler.velocity_x = vel_x
+        self.drag_handler.velocity_y = vel_y
+        self.drag_handler.mouse_history.clear()
+
+        # Preserve current platform during bounce so same-height frames do not
+        # immediately switch to taskbar baseline while still inside window lane.
+        self.drop_support_window_hwnd = self.walking_on_window_hwnd
+
+        # During free-fall we are no longer attached to any walking surface.
+        self.walking_on_window = False
+        self.walking_on_window_hwnd = None
+
+        self.state_machine.transition_to(State.DROPPING)
 
     def _get_platform_union_bounds(self):
         """Return union bounds for all usable windows, or virtual desktop as fallback."""
@@ -733,7 +762,22 @@ class GameWindow(QMainWindow):
 
     def _get_walk_lane(self, x, current_baseline):
         """Get walking lane baseline and horizontal limits for current position."""
+        if self.config.walk_on_windows_enabled:
+            current_window = self._get_current_window_surface(x, current_baseline)
+            if current_window is not None:
+                left, top, right, _ = current_window["bounds"]
+                baseline = top - self.window_size
+                min_x = left
+                max_x = max(left, right - self.window_size)
+                self.walking_on_window = True
+                self.walking_on_window_hwnd = current_window.get("hwnd")
+                self.current_walking_baseline = baseline
+                return baseline, min_x, max_x
+
         baseline = self._get_taskbar_baseline_for_point(x, current_baseline)
+        self.walking_on_window = False
+        self.walking_on_window_hwnd = None
+        self.current_walking_baseline = baseline
 
         # If walk_freely is disabled, restrict to current monitor only
         if not self.config.walk_freely:
@@ -744,10 +788,140 @@ class GameWindow(QMainWindow):
 
         return baseline, bounds[0], max(bounds[0], bounds[2] - self.window_size)
 
+    def _should_drop_from_window_edge(self, current_x, next_x, min_x, max_x):
+        """Return True only when crossing a window edge from inside to outside."""
+        current_inside = min_x <= current_x <= max_x
+        next_inside = min_x <= next_x <= max_x
+        return current_inside and not next_inside
+
+    def _get_window_platform_by_hwnd(self, hwnd):
+        """Return cached window platform dict for hwnd, or None."""
+        if hwnd is None:
+            return None
+        for window in self.window_platforms:
+            if window.get("hwnd") == hwnd:
+                return window
+        return None
+
+    def _horizontal_support_overlap(self, x, window_bounds):
+        """Return horizontal overlap (in px) between mob window and a platform."""
+        left, _, right, _ = window_bounds
+        mob_left = x
+        mob_right = x + self.window_size
+        return max(0, min(mob_right, right) - max(mob_left, left))
+
+    def _get_current_window_surface(self, x, current_baseline):
+        """Return the window currently acting as the walking surface, if any."""
+        if not self.window_platforms:
+            return None
+
+        # Treat any visible overlap as support so edge landings keep the window surface.
+        min_support_overlap = 1
+
+        # Prefer previously tracked window when still valid.
+        if self.walking_on_window and self.walking_on_window_hwnd is not None:
+            for window in self.window_platforms:
+                if window.get("hwnd") == self.walking_on_window_hwnd:
+                    _, top, _, _ = window["bounds"]
+                    baseline = top - self.window_size
+                    overlap = self._horizontal_support_overlap(x, window["bounds"])
+                    # Keep the tracked surface while any support overlap exists.
+                    if overlap > 0 and abs(baseline - current_baseline) <= self.platform_baseline_tolerance_px:
+                        return window
+                    break
+
+        # Acquire a supporting window under current position/baseline.
+        best_window = None
+        best_distance = float("inf")
+        for window in self.window_platforms:
+            _, top, _, _ = window["bounds"]
+            overlap = self._horizontal_support_overlap(x, window["bounds"])
+            if overlap < min_support_overlap:
+                continue
+
+            baseline = top - self.window_size
+            distance = abs(baseline - current_baseline)
+            if distance <= self.platform_baseline_tolerance_px and distance < best_distance:
+                best_distance = distance
+                best_window = window
+
+        return best_window
+
+    def _update_window_walking_state(self, x, baseline_y):
+        """Update walking surface tracking after snapping to a baseline."""
+        window = None
+        if self.config.walk_on_windows_enabled:
+            window = self._get_current_window_surface(x, baseline_y)
+
+        if window is None:
+            self.walking_on_window = False
+            self.walking_on_window_hwnd = None
+            self.current_walking_baseline = baseline_y
+            return
+
+        self.walking_on_window = True
+        self.walking_on_window_hwnd = window.get("hwnd")
+        self.current_walking_baseline = baseline_y
+
     def _get_landing_baseline(self, x, current_y):
-        """Choose landing baseline for x, always landing at the screen/taskbar bottom."""
-        # Always land at the taskbar baseline instead of on other windows
-        return self._get_taskbar_baseline_for_point(x, current_y)
+        """Choose the nearest landing surface below current position.
+
+        Prefers window tops (when enabled) and falls back to monitor taskbar
+        baseline when no valid window platform is below the mob.
+        """
+        taskbar_baseline = self._get_taskbar_baseline_for_point(x, current_y)
+
+        if not self.config.walk_on_windows_enabled or not self.window_platforms:
+            return taskbar_baseline
+
+        # Treat any visible overlap as support so edge landings keep the window surface.
+        min_support_overlap = 1
+
+        def _inner_x_bounds(bounds):
+            left, _, right, _ = bounds
+            return left, max(left, right - self.window_size)
+
+        # While dropping/bouncing, keep the tracked support window as long as x
+        # stays inside its inner lane. Once x leaves the lane, allow fall-through.
+        if self.drop_support_window_hwnd is not None:
+            tracked_window = self._get_window_platform_by_hwnd(self.drop_support_window_hwnd)
+            if tracked_window is not None:
+                tracked_bounds = tracked_window["bounds"]
+                tracked_min_x, tracked_max_x = _inner_x_bounds(tracked_bounds)
+                tracked_baseline = tracked_bounds[1] - self.window_size
+                if tracked_min_x <= x <= tracked_max_x:
+                    return min(taskbar_baseline, tracked_baseline)
+
+            # Tracked window disappeared or x left its inner lane.
+            self.drop_support_window_hwnd = None
+
+        candidates = [taskbar_baseline]
+
+        for window in self.window_platforms:
+            _, top, _, _ = window["bounds"]
+            window_bounds = window["bounds"]
+            overlap = self._horizontal_support_overlap(x, window_bounds)
+            if overlap < min_support_overlap:
+                continue
+
+            window_top_baseline = top - self.window_size
+            inner_min_x, inner_max_x = _inner_x_bounds(window_bounds)
+            in_inner_lane = inner_min_x <= x <= inner_max_x
+
+            # Land only on surfaces strictly below current_y so stepping off
+            # a window edge enters a real fall instead of sticking in place.
+            if window_top_baseline > current_y:
+                candidates.append(window_top_baseline)
+                continue
+
+            # When already at platform height during a bounce, keep support only
+            # while inside the platform's inner lane.
+            if in_inner_lane and abs(window_top_baseline - current_y) <= 1:
+                candidates.append(window_top_baseline)
+                if self.state_machine.current_state == State.DROPPING:
+                    self.drop_support_window_hwnd = window.get("hwnd")
+
+        return min(candidates)
 
     def _clamp_position_to_bounds(self, x, y, bounds, clamp_top=True):
         """Clamp window position to bounds while optionally allowing movement above top edge."""

@@ -20,6 +20,8 @@ def mock_config():
     config.drop_duration_ms = 500
     config.random_spawn_enabled = False
     config.baseline_y_offset = 50
+    config.walk_on_windows_enabled = True
+    config.walk_freely = True
     return config
 
 
@@ -182,3 +184,242 @@ def test_baseline_y_calculated_correctly(qapp, mock_config, mock_pygame):
         # baseline_y = work_area_bottom - sprite_size
         # baseline_y = 1080 - 64 = 1016
         assert window.baseline_y == 1016
+
+
+def test_landing_baseline_prefers_window_top_when_below(qapp, mock_config, mock_pygame):
+    """Drop landing chooses nearest window top below current position."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 1, "z_index": 0}
+        ]
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+
+        # Window-top landing baseline = 500 - 64 = 436.
+        baseline = window._get_landing_baseline(x=220, current_y=200)
+        assert baseline == 436
+
+
+def test_landing_baseline_falls_back_when_window_is_above_mob(qapp, mock_config, mock_pygame):
+    """Drop landing ignores window top if it is above current position."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 1, "z_index": 0}
+        ]
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+
+        # Current y is already below window top baseline (436), so land on taskbar baseline.
+        baseline = window._get_landing_baseline(x=220, current_y=700)
+        assert baseline == 1000
+
+
+def test_landing_baseline_keeps_surface_at_same_height_inside_inner_lane(qapp, mock_config, mock_pygame):
+    """Bouncing at window-top height should keep support while x stays in inner lane."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 1, "z_index": 0}
+        ]
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+
+        # Window-top baseline is 436. At the same Y and within inner lane, keep window support.
+        baseline = window._get_landing_baseline(x=220, current_y=436)
+        assert baseline == 436
+
+
+def test_landing_baseline_falls_through_same_height_outside_inner_lane(qapp, mock_config, mock_pygame):
+    """At same-height window top, support should drop only after leaving inner x bounds."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 1, "z_index": 0}
+        ]
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+
+        # Inner lane max_x = 500 - 64 = 436, so x=470 is outside inner lane.
+        # Even with overlap, same-height support should fall through.
+        baseline = window._get_landing_baseline(x=470, current_y=436)
+        assert baseline == 1000
+
+
+def test_get_walk_lane_uses_window_surface(qapp, mock_config, mock_pygame):
+    """Walking lane stays on window top after landing there."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 7, "z_index": 0}
+        ]
+
+        baseline, min_x, max_x = window._get_walk_lane(x=220, current_baseline=436)
+
+        assert baseline == 436
+        assert min_x == 100
+        assert max_x == 436
+        assert window.walking_on_window is True
+        assert window.walking_on_window_hwnd == 7
+
+
+def test_get_walk_lane_falls_back_to_taskbar_when_no_surface(qapp, mock_config, mock_pygame):
+    """Walking lane falls back to taskbar when no matching window surface exists."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.walking_on_window = True
+        window.walking_on_window_hwnd = 42
+        window.window_platforms = []
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+        window._get_virtual_screen_bounds = Mock(return_value=(0, 0, 1920, 1080))
+
+        baseline, min_x, max_x = window._get_walk_lane(x=220, current_baseline=436)
+
+        assert baseline == 1000
+        assert min_x == 0
+        assert max_x == 1856
+        assert window.walking_on_window is False
+        assert window.walking_on_window_hwnd is None
+
+
+def test_should_drop_from_window_edge_only_on_crossing(qapp, mock_config, mock_pygame):
+    """Drop triggers only when moving from inside lane to outside lane."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        assert window._should_drop_from_window_edge(120, 98, 100, 300) is True
+        assert window._should_drop_from_window_edge(280, 302, 100, 300) is True
+
+
+def test_should_not_drop_when_not_crossing_edge(qapp, mock_config, mock_pygame):
+    """No drop when staying inside lane or already outside lane."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        assert window._should_drop_from_window_edge(150, 170, 100, 300) is False
+        assert window._should_drop_from_window_edge(90, 80, 100, 300) is False
+        assert window._should_drop_from_window_edge(320, 340, 100, 300) is False
+
+
+def test_should_drop_when_tracked_window_edge_is_crossed(qapp, mock_config, mock_pygame):
+    """Drop should trigger when tracked window walking crosses the lane edge."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 99, "z_index": 0}
+        ]
+        window.walking_on_window = True
+        window.walking_on_window_hwnd = 99
+
+        # current_x=434 is still on the window lane; next_x=438 crosses the edge.
+        assert window._should_drop_from_window_edge(434, 438, 100, 436) is True
+
+
+def test_should_not_drop_when_tracked_window_bounces_inside_lane(qapp, mock_config, mock_pygame):
+    """A bounce that stays within the window lane should not trigger a fall."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 99, "z_index": 0}
+        ]
+        window.walking_on_window = True
+        window.walking_on_window_hwnd = 99
+
+        assert window._should_drop_from_window_edge(430, 432, 100, 436) is False
+
+
+def test_landing_baseline_accepts_off_center_overlap(qapp, mock_config, mock_pygame):
+    """Landing still uses window top when thrown off-center but overlapping."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 1, "z_index": 0}
+        ]
+        window._get_taskbar_baseline_for_point = Mock(return_value=1000)
+
+        # x=470 gives a 30px overlap with the window, enough for support.
+        baseline = window._get_landing_baseline(x=470, current_y=200)
+        assert baseline == 436
+
+
+def test_get_current_window_surface_accepts_off_center_overlap(qapp, mock_config, mock_pygame):
+    """Walking surface detection should keep support with off-center overlap."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 12, "z_index": 0}
+        ]
+
+        surface = window._get_current_window_surface(x=470, current_baseline=436)
+        assert surface is not None
+        assert surface["hwnd"] == 12
+
+
+def test_get_current_window_surface_accepts_tiny_edge_overlap(qapp, mock_config, mock_pygame):
+    """Landing at the very edge should still keep the window surface."""
+    state_machine = StateMachine()
+    with patch('src.game_window.CharacterSprite'), \
+         patch('src.game_window.DragHandler'), \
+         patch('src.game_window.random.randint', return_value=100):
+        window = GameWindow(mock_config, state_machine)
+
+        window.window_size = 64
+        window.window_platforms = [
+            {"bounds": (100, 500, 500, 900), "hwnd": 13, "z_index": 0}
+        ]
+
+        surface = window._get_current_window_surface(x=497, current_baseline=436)
+        assert surface is not None
+        assert surface["hwnd"] == 13
