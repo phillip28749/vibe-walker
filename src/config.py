@@ -241,16 +241,3 @@ class Config:
     def collision_safe_margin(self, value):
         """Set safe distance in pixels before collision triggers."""
         self.config["collision_safe_margin"] = value
-
-    def get_sprite_path(self, sprite_name):
-        """Get full path to sprite file.
-
-        Args:
-            sprite_name: Name of sprite file (e.g., 'idle.png')
-
-        Returns:
-            Full path to sprite file
-        """
-        # Get project root directory
-        root_dir = Path(__file__).parent.parent
-        return str(root_dir / "sprites" / sprite_name)

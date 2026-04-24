@@ -5,10 +5,10 @@ from ctypes import wintypes
 import pygame
 import random
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
-from PyQt5.QtCore import Qt, QTimer, QRect
-from PyQt5.QtGui import QScreen, QImage, QPixmap, QRegion, QBitmap
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QRegion
 from src.sprite_manager import CharacterSprite
-from src.state_machine import State, StateMachine
+from src.state_machine import State
 from src.drag_handler import DragHandler
 from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION, ACTION_NEEDED, ACTION_HANDLED
 
@@ -47,6 +47,11 @@ class GameWindow(QMainWindow):
         # Start game loop
         self._start_game_loop()
         print("[GAME] Game loop started")
+
+    @staticmethod
+    def _frame_divider(game_fps, anim_fps):
+        """Return a safe integer frame divider for animation updates."""
+        return max(1, game_fps // max(1, anim_fps))
 
     def _setup_window(self):
         """Configure PyQt5 window properties"""
@@ -98,7 +103,7 @@ class GameWindow(QMainWindow):
             if self.config.random_spawn_enabled:
                 baseline_x = random.randint(0, screen.width() - size)
             else:
-                baseline_x = screen.width() // 2
+                baseline_x = (screen.width() - size) // 2
 
             baseline_y = self._get_taskbar_baseline_for_point(baseline_x + size // 2, screen.center().y())
 
@@ -146,27 +151,27 @@ class GameWindow(QMainWindow):
         # Walking state
         self.walk_direction = 1  # 1 = right, -1 = left
         self.walk_frame_counter = 0
-        self.walk_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+        self.walk_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.animation_fps)
 
         # Dragged animation state
         self.dragged_frame_counter = 0
-        self.dragged_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+        self.dragged_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.animation_fps)
 
         # Waving animation state
         self.waving_frame_counter = 0
-        self.waving_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+        self.waving_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.animation_fps)
 
         # Appearing animation state
         self.appearing_frame_counter = 0
-        self.appearing_frame_update_rate = self.config.pygame_fps // self.config.animation_fps
+        self.appearing_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.animation_fps)
 
         # Drag-to-idle transition animation state
         self.drag_to_idle_frame_counter = 0
-        self.drag_to_idle_frame_update_rate = max(1, self.config.pygame_fps // self.config.drag_transition_fps)
+        self.drag_to_idle_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.drag_transition_fps)
 
         # Idle-to-walking transition animation state
         self.idle_to_walking_frame_counter = 0
-        self.idle_to_walking_frame_update_rate = max(1, self.config.pygame_fps // self.config.idle_to_walking_fps)
+        self.idle_to_walking_frame_update_rate = self._frame_divider(self.config.pygame_fps, self.config.idle_to_walking_fps)
 
         # Walk-to-idle transition animation state (reuse idle-to-walking speed)
         self.walk_to_idle_frame_counter = 0
@@ -284,10 +289,10 @@ class GameWindow(QMainWindow):
         """Return True when the window is fully outside the virtual desktop bounds."""
         left, top, right, bottom = bounds
         return (
-            x + self.window_size < left or
-            x > right or
-            y + self.window_size < top or
-            y > bottom
+            x + self.window_size <= left or
+            x >= right or
+            y + self.window_size <= top or
+            y >= bottom
         )
 
     def _recover_visible_position(self, x, y, virtual_bounds):
@@ -356,9 +361,6 @@ class GameWindow(QMainWindow):
                 self.drag_start_offset_x = event.pos[0]
                 self.drag_start_offset_y = event.pos[1]
                 self.state_machine.transition_to(State.DRAGGED)
-            elif event.button == 3:  # Right click - context menu
-                print(f"[GAME] Right-click detected at pygame pos: {event.pos}")
-                self._show_context_menu()
 
         elif event.type == pygame.MOUSEMOTION:
             # Mouse motion events handled in _update_drag() for smoother tracking
@@ -646,12 +648,6 @@ class GameWindow(QMainWindow):
 
         self.state_machine.transition_to(State.DROPPING)
 
-    def _get_platform_union_bounds(self):
-        """Return union bounds for all usable windows, or virtual desktop as fallback."""
-        if self.window_union_bounds:
-            return self.window_union_bounds
-        return self._get_virtual_screen_bounds()
-
     def _get_virtual_screen_bounds(self):
         """Return virtual desktop bounds (all monitors)."""
         if sys.platform == 'win32':
@@ -668,21 +664,6 @@ class GameWindow(QMainWindow):
 
         screen = QApplication.primaryScreen().geometry()
         return (0, 0, screen.width(), screen.height())
-
-    def _get_baseline_y_for_bounds(self, bounds):
-        """Compute baseline from a window bounds tuple."""
-        top = bounds[1]
-        bottom = bounds[3]
-        center_x = (bounds[0] + bounds[2]) // 2
-        probe_y = max(top, min(bottom - 1, top + self.window_size))
-        monitor_taskbar_baseline = self._get_taskbar_baseline_for_point(center_x, probe_y)
-
-        # Preserve elevated-window platforms while snapping bottom windows to taskbar level.
-        window_baseline = bottom - self.window_size
-        if abs(window_baseline - monitor_taskbar_baseline) <= 120:
-            return max(top, min(monitor_taskbar_baseline, bottom - self.window_size))
-
-        return max(top, min(window_baseline, bottom - self.window_size))
 
     def _get_taskbar_baseline_for_point(self, x, y):
         """Return baseline aligned with the monitor work area (taskbar-adjusted)."""
@@ -721,58 +702,6 @@ class GameWindow(QMainWindow):
             return (work.left, work.top, work.right, work.bottom)
         except Exception:
             return self._get_virtual_screen_bounds()
-
-    def _x_in_bounds(self, x, bounds):
-        """Return True if x can be inside bounds for current sprite window size."""
-        return bounds[0] <= x <= max(bounds[0], bounds[2] - self.window_size)
-
-    def _distance_to_x_band(self, x, bounds):
-        """Distance from x to nearest horizontal edge of a platform bounds."""
-        left = bounds[0]
-        right = max(bounds[0], bounds[2] - self.window_size)
-        if left <= x <= right:
-            return 0
-        return min(abs(x - left), abs(x - right))
-
-    def _vertical_overlap(self, a, b):
-        """Vertical overlap in pixels between two bounds."""
-        return max(0, min(a[3], b[3]) - max(a[1], b[1]))
-
-    def _horizontal_gap(self, a, b):
-        """Horizontal gap in pixels between two bounds (0 when overlapping)."""
-        if a[2] < b[0]:
-            return b[0] - a[2]
-        if b[2] < a[0]:
-            return a[0] - b[2]
-        return 0
-
-    def _collect_side_by_side_lane_platforms(self, selected, selected_baseline, platforms):
-        """Collect connected side-by-side platforms for a shared walking lane."""
-        lane = [selected]
-        queue = [selected]
-        max_neighbor_gap = 80
-
-        while queue:
-            current = queue.pop(0)
-            for candidate in platforms:
-                if candidate in lane:
-                    continue
-
-                candidate_baseline = self._get_baseline_y_for_bounds(candidate)
-                if abs(candidate_baseline - selected_baseline) > self.platform_baseline_tolerance_px:
-                    continue
-
-                vertical_overlap = self._vertical_overlap(current, candidate)
-                if vertical_overlap < self.window_size // 2:
-                    continue
-
-                if self._horizontal_gap(current, candidate) > max_neighbor_gap:
-                    continue
-
-                lane.append(candidate)
-                queue.append(candidate)
-
-        return lane
 
     def _get_walk_lane(self, x, current_baseline):
         """Get walking lane baseline and horizontal limits for current position."""
@@ -817,12 +746,113 @@ class GameWindow(QMainWindow):
                 return window
         return None
 
-    def _horizontal_support_overlap(self, x, window_bounds):
+    def _get_win32gui_module(self):
+        """Return win32gui module when available on Windows, else None."""
+        if sys.platform != 'win32':
+            return None
+        try:
+            import win32gui  # type: ignore[import-not-found]
+            return win32gui
+        except Exception:
+            return None
+
+    def _resolve_top_level_hwnd(self, window_handle, win32gui):
+        """Resolve a point-hit window handle to its top-level/root owner."""
+        if not window_handle:
+            return 0
+
+        get_ancestor = getattr(win32gui, "GetAncestor", None)
+        if get_ancestor:
+            try:
+                return get_ancestor(window_handle, 2)  # GA_ROOT
+            except Exception:
+                pass
+
+        get_parent = getattr(win32gui, "GetParent", None)
+        if get_parent:
+            try:
+                current = window_handle
+                while True:
+                    parent = get_parent(current)
+                    if not parent:
+                        return current
+                    current = parent
+            except Exception:
+                return window_handle
+
+        return window_handle
+
+    def _point_hits_window(self, target_hwnd, x, y, win32gui):
+        """Return True when the top-level window at point belongs to target_hwnd."""
+        try:
+            point_hwnd = win32gui.WindowFromPoint((int(x), int(y)))
+            if not point_hwnd:
+                return False
+
+            own_hwnd = int(self.winId()) if self.winId() else 0
+            if own_hwnd and point_hwnd == own_hwnd:
+                return False
+
+            if point_hwnd == target_hwnd:
+                return True
+
+            return self._resolve_top_level_hwnd(point_hwnd, win32gui) == target_hwnd
+        except Exception:
+            return False
+
+    def _visible_overlap_on_row(self, window, x, probe_y):
+        """Estimate visible overlap width between mob and a window on one row."""
+        left, top, right, bottom = window["bounds"]
+        mob_left = int(x)
+        mob_right = int(x + self.window_size)
+        overlap_left = max(mob_left, left)
+        overlap_right = min(mob_right, right)
+        geometric_overlap = max(0, overlap_right - overlap_left)
+        if geometric_overlap <= 0:
+            return 0
+
+        # Synthetic/manual platforms (e.g., unit tests or pre-refresh state)
+        # have no visibility metadata; use geometric overlap for stability.
+        if not window.get("visibility_checked", False):
+            return geometric_overlap
+
+        win32gui = self._get_win32gui_module()
+        target_hwnd = window.get("hwnd")
+        if win32gui is None or target_hwnd is None:
+            return geometric_overlap
+
+        if probe_y < top or probe_y >= bottom:
+            return 0
+
+        step = max(2, min(12, self.window_size // 6 if self.window_size else 6))
+        visible_hits = 0
+        samples = 0
+        sample_x = overlap_left
+
+        while sample_x < overlap_right:
+            samples += 1
+            if self._point_hits_window(target_hwnd, sample_x, probe_y, win32gui):
+                visible_hits += 1
+            sample_x += step
+
+        # Always include the right edge as a sample.
+        edge_x = overlap_right - 1
+        if edge_x >= overlap_left:
+            samples += 1
+            if self._point_hits_window(target_hwnd, edge_x, probe_y, win32gui):
+                visible_hits += 1
+
+        if samples <= 0 or visible_hits <= 0:
+            return 0
+
+        return int((geometric_overlap * visible_hits) / samples)
+
+    def _horizontal_support_overlap(self, x, window):
         """Return horizontal overlap (in px) between mob window and a platform."""
-        left, _, right, _ = window_bounds
-        mob_left = x
-        mob_right = x + self.window_size
-        return max(0, min(mob_right, right) - max(mob_left, left))
+        left, top, right, bottom = window["bounds"]
+        height = max(1, bottom - top)
+        probe_y = top + min(height - 1, max(1, min(6, height // 4)))
+        return self._visible_overlap_on_row(window, x, probe_y)
 
     def _get_current_window_surface(self, x, current_baseline):
         """Return the window currently acting as the walking surface, if any."""
@@ -838,7 +868,7 @@ class GameWindow(QMainWindow):
                 if window.get("hwnd") == self.walking_on_window_hwnd:
                     _, top, _, _ = window["bounds"]
                     baseline = top - self.window_size
-                    overlap = self._horizontal_support_overlap(x, window["bounds"])
+                    overlap = self._horizontal_support_overlap(x, window)
                     # Keep the tracked surface while any support overlap exists.
                     if overlap > 0 and abs(baseline - current_baseline) <= self.platform_baseline_tolerance_px:
                         return window
@@ -849,7 +879,7 @@ class GameWindow(QMainWindow):
         best_distance = float("inf")
         for window in self.window_platforms:
             _, top, _, _ = window["bounds"]
-            overlap = self._horizontal_support_overlap(x, window["bounds"])
+            overlap = self._horizontal_support_overlap(x, window)
             if overlap < min_support_overlap:
                 continue
 
@@ -903,7 +933,8 @@ class GameWindow(QMainWindow):
                 tracked_bounds = tracked_window["bounds"]
                 tracked_min_x, tracked_max_x = _inner_x_bounds(tracked_bounds)
                 tracked_baseline = tracked_bounds[1] - self.window_size
-                if tracked_min_x <= x <= tracked_max_x:
+                tracked_overlap = self._horizontal_support_overlap(x, tracked_window)
+                if tracked_min_x <= x <= tracked_max_x and tracked_overlap > 0:
                     return min(taskbar_baseline, tracked_baseline)
 
             # Tracked window disappeared or x left its inner lane.
@@ -914,7 +945,7 @@ class GameWindow(QMainWindow):
         for window in self.window_platforms:
             _, top, _, _ = window["bounds"]
             window_bounds = window["bounds"]
-            overlap = self._horizontal_support_overlap(x, window_bounds)
+            overlap = self._horizontal_support_overlap(x, window)
             if overlap < min_support_overlap:
                 continue
 
@@ -964,44 +995,6 @@ class GameWindow(QMainWindow):
         except Exception:
             return 1000
 
-    def _sprite_bounds_at_position(self, x, y):
-        """Get sprite bounding box at a given screen position."""
-        left = x + self.sprite.rect.x
-        top = y + self.sprite.rect.y
-        right = left + self.config.sprite_size
-        bottom = top + self.config.sprite_size
-        return (left, top, right, bottom)
-
-    def _aabb_intersects(self, bounds_a, bounds_b, margin=0):
-        """Check if two AABB rectangles overlap with optional margin.
-
-        Returns True if rectangles overlap (considering margin).
-        bounds: (left, top, right, bottom)
-        margin: extra pixels to apply as buffer zone
-        """
-        a_left, a_top, a_right, a_bottom = bounds_a
-        b_left, b_top, b_right, b_bottom = bounds_b
-
-        return (a_left - margin < b_right + margin and
-                a_right + margin > b_left - margin and
-                a_top - margin < b_bottom + margin and
-                a_bottom + margin > b_top - margin)
-
-    def _get_colliding_window_at_position(self, x, y, margin=2):
-        """Find topmost window colliding with sprite at position (x, y).
-
-        Returns the window dict of the topmost colliding window, or None.
-        margin: safe distance in pixels before collision triggers
-        """
-        sprite_bounds = self._sprite_bounds_at_position(x, y)
-
-        for window in self.window_platforms:
-            window_bounds = window["bounds"]
-            if self._aabb_intersects(sprite_bounds, window_bounds, margin):
-                return window
-
-        return None
-
     def _is_position_valid_for_walking(self, current_x, next_x, baseline_y, margin=2):
         """Check if moving from current_x to next_x at baseline_y collides with any window.
 
@@ -1023,16 +1016,13 @@ class GameWindow(QMainWindow):
             if sprite_bottom < window_top or sprite_top > window_bottom:
                 continue
 
-            # Window spans our walking height - check for collision at window edges
-            sprite_left_at_current = current_x
-            sprite_right_at_current = current_x + self.config.sprite_size
-            sprite_left_at_next = next_x
-            sprite_right_at_next = next_x + self.config.sprite_size
+            # Measure overlap on the sprite midline using visible screen coverage.
+            probe_y = int(min(window_bottom - 1, max(window_top, baseline_y + self.config.sprite_size // 2)))
+            current_overlap = self._visible_overlap_on_row(window, current_x, probe_y)
+            next_overlap = self._visible_overlap_on_row(window, next_x, probe_y)
 
-            currently_overlaps = (sprite_right_at_current > window_left and
-                                sprite_left_at_current < window_right)
-            next_overlaps = (sprite_right_at_next > window_left and
-                           sprite_left_at_next < window_right)
+            currently_overlaps = current_overlap > margin
+            next_overlaps = next_overlap > margin
 
             # Collision when entering or exiting a window
             if currently_overlaps != next_overlaps:
@@ -1128,7 +1118,8 @@ class GameWindow(QMainWindow):
                 platforms.append({
                     "bounds": bounds,
                     "hwnd": hwnd,
-                    "z_index": z_index
+                    "z_index": z_index,
+                    "visibility_checked": True
                 })
                 return True
 
@@ -1183,8 +1174,11 @@ class GameWindow(QMainWindow):
             if width <= 2 or height <= 2:
                 return False
 
-            x_offsets = [1, max(2, width // 4), max(2, width // 2), max(2, (3 * width) // 4), width - 2]
-            y_offsets = [1, max(2, height // 4), max(2, height // 2), max(2, (3 * height) // 4), height - 2]
+            # Probe interior points to avoid edge artifacts from rounded corners,
+            # drop-shadows, and frame margins.
+            probe_ratios = (0.20, 0.35, 0.50, 0.65, 0.80)
+            x_offsets = [max(1, min(width - 2, int(width * ratio))) for ratio in probe_ratios]
+            y_offsets = [max(1, min(height - 2, int(height * ratio))) for ratio in probe_ratios]
 
             probe_points = set()
             for x_offset in x_offsets:
@@ -1193,16 +1187,29 @@ class GameWindow(QMainWindow):
                     y = top + min(height - 2, max(1, y_offset))
                     probe_points.add((int(x), int(y)))
 
-            get_ancestor = getattr(win32gui, "GetAncestor", None)
+            visible_hit_count = 0
+            sampled_count = 0
+            min_visible_hits = 2
+            own_hwnd = int(self.winId()) if self.winId() else 0
 
             for x, y in probe_points:
                 point_hwnd = win32gui.WindowFromPoint((x, y))
                 if not point_hwnd:
-                    return False
+                    continue
 
-                root_hwnd = get_ancestor(point_hwnd, 2) if get_ancestor else point_hwnd
+                if own_hwnd and point_hwnd == own_hwnd:
+                    continue
+
+                sampled_count += 1
+
+                root_hwnd = self._resolve_top_level_hwnd(point_hwnd, win32gui)
                 if root_hwnd == hwnd or point_hwnd == hwnd:
-                    return False
+                    visible_hit_count += 1
+                    if visible_hit_count >= min_visible_hits:
+                        return False
+
+            if sampled_count == 0:
+                return False
 
             return True
         except Exception:
@@ -1211,13 +1218,28 @@ class GameWindow(QMainWindow):
     def _update_transparency_mask(self):
         """Update window mask to make magenta pixels transparent"""
         import numpy as np
-        from PyQt5.QtGui import QPainter, QRegion
+        from PyQt5.QtCore import QRect
+
+        if self.pygame_screen is None:
+            return
 
         # Get pygame surface data as RGBA
-        surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
+        try:
+            surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
+        except Exception:
+            return
 
         # Get actual surface dimensions (may differ if window was resized)
-        surf_width, surf_height = self.pygame_screen.get_size()
+        try:
+            surf_size = self.pygame_screen.get_size()
+            if not isinstance(surf_size, (tuple, list)) or len(surf_size) != 2:
+                return
+            surf_width, surf_height = int(surf_size[0]), int(surf_size[1])
+        except Exception:
+            return
+
+        if surf_width <= 0 or surf_height <= 0:
+            return
 
         # Convert to numpy array for vectorized operations
         pixels = np.frombuffer(surf_data, dtype=np.uint8).reshape((surf_height, surf_width, 4))
@@ -1228,16 +1250,21 @@ class GameWindow(QMainWindow):
                            (np.abs(g.astype(np.int16) - 0) < 10) &
                            (np.abs(b.astype(np.int16) - 255) < 10))
 
-        # Create region from non-magenta pixels for better performance
-        from PyQt5.QtCore import QPoint
+        # Build mask as horizontal runs to avoid expensive per-pixel region unions.
         region = QRegion()
+        for y in range(surf_height):
+            row = is_not_magenta[y]
+            x = 0
+            while x < surf_width:
+                if not row[x]:
+                    x += 1
+                    continue
 
-        # Get coordinates of non-magenta pixels
-        y_coords, x_coords = np.where(is_not_magenta)
+                start = x
+                while x < surf_width and row[x]:
+                    x += 1
 
-        # Add points to region in batches for better performance
-        for x, y in zip(x_coords, y_coords):
-            region = region.united(QRegion(int(x), int(y), 1, 1))
+                region = region.united(QRegion(QRect(int(start), int(y), int(x - start), 1)))
 
         # Apply region as mask
         self.setMask(region)
@@ -1311,7 +1338,6 @@ class GameWindow(QMainWindow):
     def _show_context_menu(self):
         """Show right-click context menu for behavior mode selection"""
         from PyQt5.QtWidgets import QMenu, QAction
-        from PyQt5.QtGui import QCursor
         from PyQt5.QtCore import QPoint
 
         print("[GAME] Creating context menu...")
