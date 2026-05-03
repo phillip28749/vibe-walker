@@ -1,13 +1,23 @@
 import pytest
 import pygame
 from PyQt5.QtCore import QObject, pyqtSignal
-from src.activity_bridge import ActivityBridge, CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION
+from src.activity_bridge import (
+    ActivityBridge,
+    CLAUDE_STARTED,
+    CLAUDE_STOPPED,
+    SHOW_MINION,
+    HIDE_MINION,
+    ACTION_NEEDED,
+    ACTION_HANDLED,
+)
 
 
 class MockActivityMonitor(QObject):
     """Mock activity monitor for testing"""
     activity_started = pyqtSignal()
     activity_stopped = pyqtSignal()
+    action_needed_started = pyqtSignal()
+    action_needed_stopped = pyqtSignal()
 
 
 @pytest.fixture(scope="module")
@@ -62,4 +72,30 @@ def test_post_hide_minion_static_method(pygame_init):
     pygame.event.clear()
     ActivityBridge.post_hide_minion()
     events = pygame.event.get(HIDE_MINION)
+    assert len(events) == 1
+
+
+def test_action_needed_posts_pygame_event(qtbot, pygame_init):
+    """Action-needed signal posts ACTION_NEEDED event"""
+    monitor = MockActivityMonitor()
+    bridge = ActivityBridge(monitor)
+
+    pygame.event.clear()
+    monitor.action_needed_started.emit()
+    qtbot.wait(10)
+
+    events = pygame.event.get(ACTION_NEEDED)
+    assert len(events) == 1
+
+
+def test_action_handled_posts_pygame_event(qtbot, pygame_init):
+    """Action-handled signal posts ACTION_HANDLED event"""
+    monitor = MockActivityMonitor()
+    bridge = ActivityBridge(monitor)
+
+    pygame.event.clear()
+    monitor.action_needed_stopped.emit()
+    qtbot.wait(10)
+
+    events = pygame.event.get(ACTION_HANDLED)
     assert len(events) == 1

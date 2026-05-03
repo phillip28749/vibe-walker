@@ -1,6 +1,5 @@
 """Setup script for Vibe Walker - Configures global Claude Code hooks."""
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -104,17 +103,6 @@ def setup_global_hooks(force=False):
         ]
     }
 
-    pre_tool_use_hook = {
-        "matcher": "Bash|Write|Edit|Agent|Skill|Config",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_needed\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"pre_tool_use\\",\\"tool_name\\":\\"$TOOL_NAME\\"}}}}" >> "$TRACE_FILE"\'',
-                "async": True
-            }
-        ]
-    }
-
     notification_hook = {
         "matcher": "",
         "hooks": [
@@ -198,8 +186,7 @@ def setup_global_hooks(force=False):
     print()
     print("Next steps:")
     print("1. Install dependencies: pip install -r requirements.txt")
-    print("2. Generate sprites: python generate_sprites.py")
-    print("3. Run Vibe Walker: python src/main.py")
+    print("2. Run Vibe Walker: python src/main.py")
     print()
     print("The pixel character will appear when you use Claude Code!")
     print()

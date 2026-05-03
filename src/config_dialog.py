@@ -1,13 +1,12 @@
 """Configuration dialog for vibe-walker startup settings."""
 
-import os
 from pathlib import Path
 from PIL import Image
 
 from PyQt5.QtWidgets import (
     QDialog, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox,
-    QLineEdit, QPushButton, QWidget, QDialogButtonBox, QSlider
+    QLineEdit, QWidget, QDialogButtonBox, QSlider
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QImage

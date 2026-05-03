@@ -1,10 +1,15 @@
 import pygame
 import os
+from PIL import Image
 from src.state_machine import State
 
 
 class CharacterSprite(pygame.sprite.Sprite):
     """Pygame sprite for the desktop pet character"""
+
+    STANDARD_COLUMNS = 4
+    STANDARD_ROWS = 4
+    STANDARD_FRAME_COUNT = STANDARD_COLUMNS * STANDARD_ROWS
 
     def __init__(self, sprite_size=64, use_dragged_animation=True):
         super().__init__()
@@ -41,102 +46,102 @@ class CharacterSprite(pygame.sprite.Sprite):
         idle_path = os.path.join(sprite_dir, "idle.png")
         self.images[State.IDLE] = self._load_sprite(idle_path)
 
-        # Load walking sprites (2 frames per direction)
-        self.images[State.WALKING] = {
-            "left": [
+        # Prefer the full 4x4 movement sprite sheet when present.
+        walking_sheet_path = self._first_existing_path(
+            os.path.join(sprite_dir, "movement", "walking.png"),
+            os.path.join(sprite_dir, "walking.png")
+        )
+        if os.path.exists(walking_sheet_path):
+            right_frames = self._load_standard_animation(walking_sheet_path)
+            self.images[State.WALKING] = {
+                "left": [pygame.transform.flip(frame, True, False) for frame in right_frames],
+                "right": right_frames
+            }
+        else:
+            left_frames = [
                 self._load_sprite(os.path.join(sprite_dir, "walk_left_1.png")),
                 self._load_sprite(os.path.join(sprite_dir, "walk_left_2.png"))
-            ],
-            "right": [
+            ]
+            right_frames = [
                 self._load_sprite(os.path.join(sprite_dir, "walk_right_1.png")),
                 self._load_sprite(os.path.join(sprite_dir, "walk_right_2.png"))
             ]
-        }
+            self.images[State.WALKING] = {
+                "left": self._repeat_to_standard_length(left_frames),
+                "right": self._repeat_to_standard_length(right_frames)
+            }
 
         # Load waving animation
-        waving_sheet_path = os.path.join(sprite_dir, "waving", "waving_w.png")
+        waving_sheet_path = self._first_existing_path(
+            os.path.join(sprite_dir, "movement", "waving_w.png"),
+            os.path.join(sprite_dir, "waving", "waving_w.png")
+        )
         if os.path.exists(waving_sheet_path):
-            self.images[State.WAVING] = self._load_sprite_sheet(waving_sheet_path, frames=8)
+            self.images[State.WAVING] = self._load_standard_animation(waving_sheet_path)
         else:
-            self.images[State.WAVING] = [self.images[State.IDLE]]
+            self.images[State.WAVING] = self._repeat_to_standard_length([self.images[State.IDLE]])
 
-        # Load appearing/climb_out animation
-        appearing_frames = []
-        for i in range(8):
-            frame_path = os.path.join(sprite_dir, "climb_out", f"frame_{i:02d}.png")
-            if os.path.exists(frame_path):
-                appearing_frames.append(self._load_sprite(frame_path))
-        if appearing_frames:
-            self.images[State.APPEARING] = appearing_frames
+        # Load appearing/climb-out animation
+        climbout_sheet_path = os.path.join(sprite_dir, "movement", "climbout.png")
+        if os.path.exists(climbout_sheet_path):
+            self.images[State.APPEARING] = self._load_standard_animation(climbout_sheet_path)
         else:
-            self.images[State.APPEARING] = [self.images[State.IDLE]]
+            appearing_frames = []
+            for i in range(8):
+                frame_path = os.path.join(sprite_dir, "climb_out", f"frame_{i:02d}.png")
+                if os.path.exists(frame_path):
+                    appearing_frames.append(self._load_sprite(frame_path))
+            if appearing_frames:
+                self.images[State.APPEARING] = self._repeat_to_standard_length(appearing_frames)
+            else:
+                self.images[State.APPEARING] = self._repeat_to_standard_length([self.images[State.IDLE]])
 
         # Load idle-to-walking transition animation (16 frames total: 4x4 sheet)
-        idle_to_walking_path = os.path.join(sprite_dir, "transition", "idle_to_walking2.png")
+        idle_to_walking_path = os.path.join(sprite_dir, "transition", "idle_to_walking.png")
         if os.path.exists(idle_to_walking_path):
-            idle_to_walking_frames = []
-            for row in range(4):
-                idle_to_walking_frames.extend(
-                    self._load_sprite_sheet(idle_to_walking_path, frames=4, rows=4, use_row=row)
-                )
-            self.images["IDLE_TO_WALKING"] = idle_to_walking_frames
+            self.images["IDLE_TO_WALKING"] = self._load_standard_animation(idle_to_walking_path)
         else:
-            legacy_idle_to_walking_path = os.path.join(sprite_dir, "transition", "idle_to_walking.png")
-            if os.path.exists(legacy_idle_to_walking_path):
-                top_row = self._load_sprite_sheet(legacy_idle_to_walking_path, frames=4, rows=2, use_row=0)
-                bottom_row = self._load_sprite_sheet(legacy_idle_to_walking_path, frames=4, rows=2, use_row=1)
-                self.images["IDLE_TO_WALKING"] = top_row + bottom_row
-            else:
-                self.images["IDLE_TO_WALKING"] = [self.images[State.IDLE]]
+            self.images["IDLE_TO_WALKING"] = self._repeat_to_standard_length([self.images[State.IDLE]])
 
         # Load walk-to-idle transition animation (16 frames total: 4x4 sheet)
         walk_to_idle_path = os.path.join(sprite_dir, "transition", "walk_to_idle.png")
         if os.path.exists(walk_to_idle_path):
-            walk_to_idle_frames = []
-            for row in range(4):
-                walk_to_idle_frames.extend(
-                    self._load_sprite_sheet(walk_to_idle_path, frames=4, rows=4, use_row=row)
-                )
-            self.images["WALK_TO_IDLE"] = walk_to_idle_frames
+            self.images["WALK_TO_IDLE"] = self._load_standard_animation(walk_to_idle_path)
         else:
             # Fall back to the reverse of the idle-to-walking animation if a dedicated sheet is unavailable.
             self.images["WALK_TO_IDLE"] = list(reversed(self.images["IDLE_TO_WALKING"]))
 
-        # Load drag-to-idle transition animation (8 frames total: top row + bottom row)
+        # Load drag-to-idle transition animation (16 frames total: 4x4 sheet)
         drag_to_idle_path = os.path.join(sprite_dir, "transition", "drag_to_idle.png")
         if os.path.exists(drag_to_idle_path):
-            # Load top row (frames 0-3)
-            top_row = self._load_sprite_sheet(drag_to_idle_path, frames=4, rows=2, use_row=0)
-            # Load bottom row (frames 4-7)
-            bottom_row = self._load_sprite_sheet(drag_to_idle_path, frames=4, rows=2, use_row=1)
-            # Combine both rows for 8 total frames
-            self.images["DRAG_TO_IDLE"] = top_row + bottom_row
-            # Reverse for idle-to-drag (frames 7→6→5→4→3→2→1→0)
+            drag_to_idle_frames = self._load_standard_animation(drag_to_idle_path)
+            self.images["DRAG_TO_IDLE"] = drag_to_idle_frames
+            # Reverse for idle-to-drag.
             self.images["IDLE_TO_DRAG"] = list(reversed(self.images["DRAG_TO_IDLE"]))
         else:
-            self.images["DRAG_TO_IDLE"] = [self.images[State.IDLE]]
-            self.images["IDLE_TO_DRAG"] = [self.images[State.DRAGGED][0]]
+            self.images["DRAG_TO_IDLE"] = self._repeat_to_standard_length([self.images[State.IDLE]])
+            self.images["IDLE_TO_DRAG"] = list(reversed(self.images["DRAG_TO_IDLE"]))
 
         # Load dragged sprite (animated or static based on config)
         if self.use_dragged_animation:
             # Load sprite sheet for animation
             dragged_sheet_path = os.path.join(sprite_dir, "dragged_sheet.png")
-            if os.path.exists(dragged_sheet_path):
-                self.images[State.DRAGGED] = self._load_sprite_sheet(dragged_sheet_path, frames=8)
+            if os.path.exists(dragged_sheet_path) and self._is_standard_sheet(dragged_sheet_path):
+                self.images[State.DRAGGED] = self._load_standard_animation(dragged_sheet_path)
             else:
                 # Fallback to single sprite
                 dragged_path = os.path.join(sprite_dir, "dragged.png")
                 if os.path.exists(dragged_path):
-                    self.images[State.DRAGGED] = [self._load_sprite(dragged_path)]
+                    self.images[State.DRAGGED] = self._repeat_to_standard_length([self._load_sprite(dragged_path)])
                 else:
-                    self.images[State.DRAGGED] = [self.images[State.IDLE]]
+                    self.images[State.DRAGGED] = self._repeat_to_standard_length([self.images[State.IDLE]])
         else:
             # Use single static sprite
             dragged_path = os.path.join(sprite_dir, "dragged.png")
             if os.path.exists(dragged_path):
-                self.images[State.DRAGGED] = [self._load_sprite(dragged_path)]
+                self.images[State.DRAGGED] = self._repeat_to_standard_length([self._load_sprite(dragged_path)])
             else:
-                self.images[State.DRAGGED] = [self.images[State.IDLE]]
+                self.images[State.DRAGGED] = self._repeat_to_standard_length([self.images[State.IDLE]])
 
     def _load_sprite(self, path):
         """Load and scale a sprite image"""
@@ -148,45 +153,106 @@ class CharacterSprite(pygame.sprite.Sprite):
 
         # Ensure display is set for convert_alpha to work
         if pygame.display.get_surface() is None:
-            pygame.display.set_mode((1, 1), pygame.HIDDEN)
+            try:
+                pygame.display.set_mode((1, 1), pygame.HIDDEN)
+            except pygame.error:
+                pass
 
-        image = pygame.image.load(path).convert_alpha()
+        image = pygame.image.load(path)
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
         # Use smoothscale for better quality when scaling
         return pygame.transform.smoothscale(image, (self.sprite_size, self.sprite_size))
 
-    def _load_sprite_sheet(self, path, frames=8, rows=1, use_row=0):
-        """Load and extract frames from a sprite sheet
+    def _first_existing_path(self, *paths):
+        """Return the first existing path, or the first candidate for fallback checks."""
+        for path in paths:
+            if os.path.exists(path):
+                return path
+        return paths[0]
 
-        Args:
-            path: Path to sprite sheet image
-            frames: Number of frames per row (arranged horizontally)
-            rows: Number of rows in the sprite sheet
-            use_row: Which row to extract (0-indexed)
+    def _load_standard_animation(self, path):
+        """Load a standardized 4x4 animation sheet as 16 frames."""
+        image = Image.open(path).convert("RGBA")
+        x_ranges = self._detect_grid_cell_ranges(image, self.STANDARD_COLUMNS, axis="x")
+        y_ranges = self._detect_grid_cell_ranges(image, self.STANDARD_ROWS, axis="y")
 
-        Returns:
-            List of pygame surfaces, one per frame
-        """
-        # Ensure display is set for convert_alpha to work
-        if pygame.display.get_surface() is None:
-            pygame.display.set_mode((1, 1), pygame.HIDDEN)
+        frames = []
+        for top, bottom in y_ranges:
+            for left, right in x_ranges:
+                frame = image.crop((left, top, right + 1, bottom + 1))
+                frames.append(self._pil_image_to_surface(frame))
 
-        sheet = pygame.image.load(path).convert_alpha()
-        sheet_width, sheet_height = sheet.get_size()
-        frame_width = sheet_width // frames
-        frame_height = sheet_height // rows
+        return self._repeat_to_standard_length(frames)
 
-        frame_list = []
-        for i in range(frames):
-            # Extract frame from sheet at specified row
-            frame_rect = pygame.Rect(i * frame_width, use_row * frame_height, frame_width, frame_height)
-            frame = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA)
-            frame.blit(sheet, (0, 0), frame_rect)
+    def _is_standard_sheet(self, path):
+        """Return True if an image can be interpreted as a 4x4 animation sheet."""
+        image = Image.open(path)
+        width, height = image.size
+        return width >= self.STANDARD_COLUMNS and height >= self.STANDARD_ROWS
 
-            # Use smoothscale for better quality
-            scaled_frame = pygame.transform.smoothscale(frame, (self.sprite_size, self.sprite_size))
-            frame_list.append(scaled_frame)
+    def _repeat_to_standard_length(self, frames):
+        """Repeat or trim frames so every animation has 16 frames."""
+        if not frames:
+            return []
 
-        return frame_list
+        if len(frames) >= self.STANDARD_FRAME_COUNT:
+            return frames[:self.STANDARD_FRAME_COUNT]
+
+        repeated = []
+        for index in range(self.STANDARD_FRAME_COUNT):
+            source_index = int(index * len(frames) / self.STANDARD_FRAME_COUNT)
+            repeated.append(frames[source_index])
+        return repeated
+
+    def _detect_grid_cell_ranges(self, image, count, axis):
+        """Detect grid separators and return inclusive cell ranges."""
+        width, height = image.size
+        length = width if axis == "x" else height
+        cross_length = height if axis == "x" else width
+        separators = []
+        pixels = image.load()
+
+        for index in range(length):
+            separator_pixels = 0
+            for cross in range(cross_length):
+                x, y = (index, cross) if axis == "x" else (cross, index)
+                r, g, b, _ = pixels[x, y]
+                if abs(r - g) <= 3 and abs(g - b) <= 3 and 70 <= r <= 110:
+                    separator_pixels += 1
+            if separator_pixels > cross_length * 0.6:
+                separators.append(index)
+
+        bands = self._group_contiguous_numbers(separators)
+        if len(bands) != count + 1:
+            cell_size = length // count
+            return [(i * cell_size, ((i + 1) * cell_size) - 1) for i in range(count)]
+
+        return [(bands[i][1] + 1, bands[i + 1][0] - 1) for i in range(count)]
+
+    def _group_contiguous_numbers(self, numbers):
+        """Group sorted numbers into inclusive ranges."""
+        if not numbers:
+            return []
+
+        ranges = []
+        start = previous = numbers[0]
+        for number in numbers[1:]:
+            if number == previous + 1:
+                previous = number
+            else:
+                ranges.append((start, previous))
+                start = previous = number
+        ranges.append((start, previous))
+        return ranges
+
+    def _pil_image_to_surface(self, image):
+        """Convert a PIL frame to a scaled pygame surface."""
+        image = image.resize((self.sprite_size, self.sprite_size), Image.Resampling.LANCZOS)
+        surface = pygame.image.fromstring(image.tobytes(), image.size, "RGBA")
+        if pygame.display.get_surface() is not None:
+            return surface.convert_alpha()
+        return surface
 
     def _get_sprite_for_state(self, state):
         """Get the sprite image for a given state
@@ -255,28 +321,28 @@ class CharacterSprite(pygame.sprite.Sprite):
 
         # Check for state transitions
         if state != self.current_state:
-            # DRAGGED/DROPPING -> IDLE: play drag-to-idle animation (frames 0→7)
+            # DRAGGED/DROPPING -> IDLE: play drag-to-idle animation.
             if (self.current_state in [State.DRAGGED, State.DROPPING]) and state == State.IDLE:
                 self.playing_drag_to_idle = True
                 self.drag_to_idle_frame = 0
                 self.current_state = state
                 self.image = self.images["DRAG_TO_IDLE"][0]
                 return
-            # IDLE -> WALKING: play idle-to-walking animation (frames 0→7)
+            # IDLE -> WALKING: play idle-to-walking animation.
             elif self.current_state == State.IDLE and state == State.WALKING:
                 self.playing_idle_to_walking = True
                 self.idle_to_walking_frame = 0
                 self.current_state = state
                 self.image = self.images["IDLE_TO_WALKING"][0]
                 return
-            # WALKING -> IDLE: play walk-to-idle animation (frames 0→15)
+            # WALKING -> IDLE: play walk-to-idle animation.
             elif self.current_state == State.WALKING and state == State.IDLE:
                 self.playing_walk_to_idle = True
                 self.walk_to_idle_frame = 0
                 self.current_state = state
                 self.image = self.images["WALK_TO_IDLE"][0]
                 return
-            # IDLE -> DRAGGED: play idle-to-drag animation (frames 7→0 reversed)
+            # IDLE -> DRAGGED: play idle-to-drag animation.
             elif self.current_state == State.IDLE and state == State.DRAGGED:
                 self.playing_idle_to_drag = True
                 self.idle_to_drag_frame = 0
@@ -290,7 +356,8 @@ class CharacterSprite(pygame.sprite.Sprite):
 
     def update_walk_frame(self):
         """Advance walking animation frame"""
-        self.walk_frame = (self.walk_frame + 1) % 2
+        direction = "right" if self.walk_direction > 0 else "left"
+        self.walk_frame = (self.walk_frame + 1) % len(self.images[State.WALKING][direction])
 
     def update_dragged_frame(self):
         """Advance dragged animation frame"""
@@ -305,7 +372,6 @@ class CharacterSprite(pygame.sprite.Sprite):
     def update_appearing_frame(self):
         """Advance appearing animation frame"""
         num_frames = len(self.images[State.APPEARING])
-        old_frame = self.appearing_frame
         self.appearing_frame = min(self.appearing_frame + 1, num_frames - 1)
         return self.appearing_frame >= num_frames - 1  # Return True when animation complete
 

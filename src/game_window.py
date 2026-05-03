@@ -5,10 +5,9 @@ from ctypes import wintypes
 import pygame
 import random
 from PyQt5.QtWidgets import QMainWindow, QWidget, QApplication
-from PyQt5.QtCore import Qt, QTimer, QRect
-from PyQt5.QtGui import QScreen, QImage, QPixmap, QRegion, QBitmap
+from PyQt5.QtCore import Qt, QTimer
 from src.sprite_manager import CharacterSprite
-from src.state_machine import State, StateMachine
+from src.state_machine import State
 from src.drag_handler import DragHandler
 from src.activity_bridge import CLAUDE_STARTED, CLAUDE_STOPPED, SHOW_MINION, HIDE_MINION, ACTION_NEEDED, ACTION_HANDLED
 
@@ -122,10 +121,8 @@ class GameWindow(QMainWindow):
         # Create display surface - match window size
         size = self.window_size
         self.pygame_screen = pygame.display.set_mode((size, size), pygame.NOFRAME)
+        self.render_surface = pygame.Surface((size, size), pygame.SRCALPHA)
         self.clock = pygame.time.Clock()
-
-        # Set transparent color key (magenta - will be made transparent via mask)
-        self.transparent_color = (255, 0, 255)
 
     def _init_game_objects(self):
         """Initialize sprite, drag handler, etc."""
@@ -241,9 +238,11 @@ class GameWindow(QMainWindow):
         # Update drag/drop physics
         self._update_physics()
 
-        # Render with magenta background (will be masked as transparent)
-        self.pygame_screen.fill(self.transparent_color)
-        self.sprite_group.draw(self.pygame_screen)
+        # Render to an alpha surface so transparency comes from the sprite,
+        # not from a reserved background color.
+        self.render_surface.fill((0, 0, 0, 0))
+        self.sprite_group.draw(self.render_surface)
+        self._blit_render_surface_to_display()
 
         # Only update mask if sprite image changed
         if self.sprite.image != self.last_sprite_image:
@@ -254,6 +253,16 @@ class GameWindow(QMainWindow):
 
         # Maintain framerate
         self.clock.tick(self.config.pygame_fps)
+
+    def _blit_render_surface_to_display(self):
+        """Draw visible sprite pixels without blending them against a mask color."""
+        display_surface = self.render_surface.copy()
+        alpha = pygame.surfarray.pixels_alpha(display_surface)
+        alpha[alpha > 0] = 255
+        del alpha
+
+        self.pygame_screen.fill((0, 0, 0))
+        self.pygame_screen.blit(display_surface, (0, 0))
 
     def _recover_if_display_layout_changed(self):
         """Re-anchor the mob when monitor layout changes or when it drifts off-screen."""
@@ -1158,31 +1167,21 @@ class GameWindow(QMainWindow):
         return None
 
     def _update_transparency_mask(self):
-        """Update window mask to make magenta pixels transparent"""
+        """Update window mask from rendered sprite alpha."""
         import numpy as np
-        from PyQt5.QtGui import QPainter, QRegion
+        from PyQt5.QtGui import QRegion
 
-        # Get pygame surface data as RGBA
-        surf_data = pygame.image.tostring(self.pygame_screen, 'RGBA')
+        # Get rendered alpha data from the offscreen surface.
+        alpha_data = pygame.surfarray.array_alpha(self.render_surface)
 
-        # Get actual surface dimensions (may differ if window was resized)
-        surf_width, surf_height = self.pygame_screen.get_size()
+        # array_alpha is shaped as (width, height), so transpose it to y/x coordinates.
+        is_visible = alpha_data.T > 24
 
-        # Convert to numpy array for vectorized operations
-        pixels = np.frombuffer(surf_data, dtype=np.uint8).reshape((surf_height, surf_width, 4))
-
-        # Vectorized magenta detection with threshold (R=255, G=0, B=255, threshold=10)
-        r, g, b = pixels[:, :, 0], pixels[:, :, 1], pixels[:, :, 2]
-        is_not_magenta = ~((np.abs(r.astype(np.int16) - 255) < 10) &
-                           (np.abs(g.astype(np.int16) - 0) < 10) &
-                           (np.abs(b.astype(np.int16) - 255) < 10))
-
-        # Create region from non-magenta pixels for better performance
-        from PyQt5.QtCore import QPoint
+        # Create region from visible pixels for better performance
         region = QRegion()
 
-        # Get coordinates of non-magenta pixels
-        y_coords, x_coords = np.where(is_not_magenta)
+        # Get coordinates of visible pixels
+        y_coords, x_coords = np.where(is_visible)
 
         # Add points to region in batches for better performance
         for x, y in zip(x_coords, y_coords):
@@ -1260,7 +1259,6 @@ class GameWindow(QMainWindow):
     def _show_context_menu(self):
         """Show right-click context menu for behavior mode selection"""
         from PyQt5.QtWidgets import QMenu, QAction
-        from PyQt5.QtGui import QCursor
         from PyQt5.QtCore import QPoint
 
         print("[GAME] Creating context menu...")

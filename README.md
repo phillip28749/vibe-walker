@@ -1,6 +1,6 @@
 <div align="center">
 
-![Vibe Walker Wallpaper](wallpaper/wall%20paper.png)
+![Vibe Walker Wallpaper](sprites/wallpaper/wall%20paper.png)
 </div>
 
 A fun Windows desktop app featuring an interactive pixel assistant that responds to Claude Code activity.
@@ -61,16 +61,15 @@ A fun Windows desktop app featuring an interactive pixel assistant that responds
    pip install -r requirements.txt
    ```
 
-3. **Run the app** (automatically handles all setup):
+3. **Configure Claude Code hooks**:
+   ```bash
+   python setup.py
+   ```
+
+4. **Run the app**:
    ```bash
    python src/main.py
    ```
-   
-   This automatically:
-   - Generates sprites if they don't exist
-   - Configures Claude Code hooks in `~/.claude/settings.json`
-   - Creates a backup of your existing settings
-   - Starts the desktop character monitor
 
 That's it! The character will appear on your taskbar when you use Claude Code.
 
@@ -84,7 +83,7 @@ From the project root directory:
 python src/main.py
 ```
 
-On first run, this automatically sets up everything (hooks, sprites, config). On subsequent runs, it simply starts the character monitor.
+Run `python setup.py` once to configure hooks. After that, `python src/main.py` starts the character monitor.
 
 ### Using Claude Code
 
@@ -165,23 +164,13 @@ Edit `config.json` to customize behavior:
 
 ### Creating Custom Sprites
 
-Replace the sprites in the `sprites/` folder with your own 64x64 PNG images:
+Replace the image assets in `sprites/` with your own PNG files:
 
-- `idle.png` - Standing still pose
-- `walk_left_1.png` - Walking left, frame 1
-- `walk_left_2.png` - Walking left, frame 2
-- `walk_right_1.png` - Walking right, frame 1
-- `walk_right_2.png` - Walking right, frame 2
+- `sprites/idle.png` - Standing still pose
+- `sprites/movement/*.png` - 4x4 movement animation sheets
+- `sprites/transition/*.png` - 4x4 transition animation sheets
 
-All sprites should have a transparent background.
-
-### Regenerating Default Sprites
-
-To recreate the default sprites:
-
-```bash
-python generate_sprites.py
-```
+Animation sheets should contain 16 frames arranged in a 4x4 grid.
 
 ## Run on Startup (Windows)
 
@@ -230,10 +219,7 @@ This happens when queries don't get properly closed (orphaned queries).
 
 **Quick fix:**
 ```bash
-# Run the cleanup script
-python cleanup_orphaned_queries.py
-
-# Or manually clear the trace file
+# Clear the trace file
 echo "" > trace/query_events.jsonl
 ```
 
@@ -244,7 +230,7 @@ echo "" > trace/query_events.jsonl
 
 **Prevention:**
 - Don't add hooks to local `.claude/settings.json` in the repo (only use global settings)
-- Run cleanup script when character gets stuck
+- Clear the trace file if the character gets stuck
 
 ## Development
 
@@ -267,11 +253,7 @@ vibe-walker/
 │   └── query_events.jsonl     # Trace events from Claude Code
 ├── config.json                # Application configuration (portable)
 ├── setup.py                   # Automated setup script
-├── cleanup_orphaned_queries.py # Manual cleanup utility
-├── cleanup.bat / .sh          # Quick cleanup scripts
 ├── requirements.txt           # Python dependencies
-├── generate_sprites.py        # Sprite generation utility
-├── GLOBAL_SETUP.md            # Global setup documentation
 └── README.md                  # This file
 ```
 
