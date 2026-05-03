@@ -28,12 +28,14 @@ class Config:
         "debug_action_detection": False,
         "permission_timeout_sec": 60,  # Timeout for permission dialogs
         "action_timeout_sec": 30,      # Timeout for other actions
-        "behavior_mode": "claude",     # Behavior mode: "claude" or "pet"
+        "behavior_mode": "vibe",       # Behavior mode: "vibe" or "pet"
         "dragged_animation_enabled": False,  # Use animated sprite when dragged
         "walk_freely": True,  # Allow walking across all monitors
         "window_collision_enabled": True,  # Enable collision detection with windows
         "walk_on_windows_enabled": True,  # Allow mob to walk on window surfaces
-        "collision_safe_margin": 2  # Safe distance in pixels before collision triggers
+        "collision_safe_margin": 2,  # Safe distance in pixels before collision triggers
+        "codex_activity_enabled": True,
+        "codex_sessions_dir": str(Path.home() / ".codex" / "sessions"),
     }
 
     def __init__(self, config_file="config.json"):
@@ -192,15 +194,28 @@ class Config:
 
     @property
     def behavior_mode(self):
-        """Get current behavior mode ('claude' or 'pet')."""
-        return self.config.get("behavior_mode", "claude")
+        """Get current behavior mode ('vibe' or 'pet')."""
+        mode = self.config.get("behavior_mode", "vibe")
+        return "vibe" if mode == "claude" else mode
 
     @behavior_mode.setter
     def behavior_mode(self, value):
         """Set behavior mode."""
-        if value not in ["claude", "pet"]:
+        if value == "claude":
+            value = "vibe"
+        if value not in ["vibe", "pet"]:
             raise ValueError(f"Invalid behavior mode: {value}")
         self.config["behavior_mode"] = value
+
+    @property
+    def codex_activity_enabled(self):
+        """Get whether Codex session monitoring is enabled."""
+        return self.config.get("codex_activity_enabled", True)
+
+    @property
+    def codex_sessions_dir(self):
+        """Get the Codex sessions directory path."""
+        return self.config.get("codex_sessions_dir", str(Path.home() / ".codex" / "sessions"))
 
     @property
     def walk_freely(self):

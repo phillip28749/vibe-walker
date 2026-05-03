@@ -106,8 +106,6 @@ class GameWindow(QMainWindow):
             self.baseline_y = baseline_y
             self.initial_window_x = baseline_x
 
-        self.baseline_screen_height = screen.height()
-
     def _setup_pygame(self):
         """Initialize Pygame surface embedded in Qt widget"""
         # Tell SDL to use our Qt widget
@@ -186,7 +184,7 @@ class GameWindow(QMainWindow):
         # Connect state machine signals
         self.state_machine.state_changed.connect(self.on_state_changed)
 
-        # Track Claude Code activity state
+        # Track activity-driven mode state
         self.claude_active = False
         self.pending_actions_count = 0  # Count of pending actions requiring user input
         self.state_before_waving = None  # Store state to return to after waving
@@ -206,8 +204,6 @@ class GameWindow(QMainWindow):
         self.walking_on_window_hwnd = None  # HWND of the window we're walking on
         self.drop_support_window_hwnd = None  # Window surface retained during bouncing drop
         self.current_walking_baseline = self.baseline_y  # Current baseline (taskbar or window top)
-        self.previous_walking_baseline = self.baseline_y  # Previous baseline for transition detection
-
         # Start pet mode if configured
         if self.behavior_mode == "pet":
             self._start_pet_mode()
@@ -312,14 +308,14 @@ class GameWindow(QMainWindow):
         if event.type == CLAUDE_STARTED:
             print("[GAME] Received CLAUDE_STARTED event")
             self.claude_active = True
-            if self.behavior_mode == "claude":  # Only respond in claude mode
+            if self.behavior_mode == "vibe":  # Only respond in vibe mode
                 if self.state_machine.current_state in [State.IDLE, State.WALKING]:
                     self.state_machine.transition_to(State.WALKING)
 
         elif event.type == CLAUDE_STOPPED:
             print("[GAME] Received CLAUDE_STOPPED event")
             self.claude_active = False
-            if self.behavior_mode == "claude":  # Only respond in claude mode
+            if self.behavior_mode == "vibe":  # Only respond in vibe mode
                 if self.state_machine.current_state == State.WALKING:
                     self.state_machine.transition_to(State.IDLE)
 
@@ -1169,6 +1165,7 @@ class GameWindow(QMainWindow):
     def _update_transparency_mask(self):
         """Update window mask from rendered sprite alpha."""
         import numpy as np
+        from PyQt5.QtCore import QRect
         from PyQt5.QtGui import QRegion
 
         # Get rendered alpha data from the offscreen surface.
@@ -1177,15 +1174,25 @@ class GameWindow(QMainWindow):
         # array_alpha is shaped as (width, height), so transpose it to y/x coordinates.
         is_visible = alpha_data.T > 24
 
-        # Create region from visible pixels for better performance
         region = QRegion()
+        for y, row in enumerate(is_visible):
+            visible_columns = np.flatnonzero(row)
+            if visible_columns.size == 0:
+                continue
 
-        # Get coordinates of visible pixels
-        y_coords, x_coords = np.where(is_visible)
+            run_start = int(visible_columns[0])
+            run_end = run_start
 
-        # Add points to region in batches for better performance
-        for x, y in zip(x_coords, y_coords):
-            region = region.united(QRegion(int(x), int(y), 1, 1))
+            for x in visible_columns[1:]:
+                x = int(x)
+                if x == run_end + 1:
+                    run_end = x
+                    continue
+
+                region = region.united(QRegion(QRect(run_start, y, run_end - run_start + 1, 1)))
+                run_start = run_end = x
+
+            region = region.united(QRegion(QRect(run_start, y, run_end - run_start + 1, 1)))
 
         # Apply region as mask
         self.setMask(region)
@@ -1223,7 +1230,6 @@ class GameWindow(QMainWindow):
         # Reassert with Win32 to prevent other regular windows from covering the minion.
         if sys.platform == 'win32':
             try:
-                import ctypes
                 hwnd = int(self.winId())
                 HWND_TOPMOST = -1
                 SWP_NOMOVE = 0x0002
@@ -1314,11 +1320,11 @@ class GameWindow(QMainWindow):
         pet_action.triggered.connect(lambda: self.set_behavior_mode("pet"))
         menu.addAction(pet_action)
 
-        # Claude mode option
-        claude_action = QAction("Claude mode (activity-driven)", menu)
+        # Vibe mode option
+        claude_action = QAction("Vibe mode (activity-driven)", menu)
         claude_action.setCheckable(True)
-        claude_action.setChecked(self.behavior_mode == "claude")
-        claude_action.triggered.connect(lambda: self.set_behavior_mode("claude"))
+        claude_action.setChecked(self.behavior_mode == "vibe")
+        claude_action.triggered.connect(lambda: self.set_behavior_mode("vibe"))
         menu.addAction(claude_action)
 
         menu.addSeparator()
@@ -1336,7 +1342,7 @@ class GameWindow(QMainWindow):
         print("[GAME] Menu popup called")
 
     def set_behavior_mode(self, mode):
-        """Switch behavior mode between pet and claude"""
+        """Switch behavior mode between pet and vibe."""
         print(f"[GAME] Switching to {mode} mode")
         self.behavior_mode = mode
         self.config.behavior_mode = mode
@@ -1344,9 +1350,9 @@ class GameWindow(QMainWindow):
 
         if mode == "pet":
             self._start_pet_mode()
-        else:  # claude mode
+        else:  # vibe mode
             self._stop_pet_mode()
-            # Return to appropriate state based on current Claude activity
+            # Return to appropriate state based on current activity state
             if self.state_machine.current_state in [State.IDLE, State.WALKING]:
                 if self.claude_active:
                     self.state_machine.transition_to(State.WALKING)

@@ -1,4 +1,4 @@
-"""Setup script for Vibe Walker - Configures global Claude Code hooks."""
+"""Setup script for Vibe Walker - configures Claude Code hooks and Codex support."""
 import json
 import sys
 from pathlib import Path
@@ -7,7 +7,7 @@ from pathlib import Path
 HOOK_VERSION = "2.0.0"
 
 def setup_global_hooks(force=False):
-    """Configure global Claude Code hooks with the correct trace file path."""
+    """Configure Claude Code hooks with the correct trace file path."""
 
     print("=" * 60)
     print("VIBE WALKER - Setup")
@@ -26,6 +26,7 @@ def setup_global_hooks(force=False):
 
     print(f"Repository directory: {repo_dir}")
     print(f"Trace file will be: {trace_file}")
+    print("Codex support uses session logs from ~/.codex/sessions (no hook install needed)")
     print()
 
     # Get global Claude settings path
@@ -181,14 +182,14 @@ def setup_global_hooks(force=False):
 
     print()
     print("=" * 60)
-    print(f"[SUCCESS] Vibe Walker hooks configured! (v{HOOK_VERSION})")
+    print(f"[SUCCESS] Vibe Walker integration configured! (v{HOOK_VERSION})")
     print("=" * 60)
     print()
     print("Next steps:")
     print("1. Install dependencies: pip install -r requirements.txt")
     print("2. Run Vibe Walker: python src/main.py")
     print()
-    print("The pixel character will appear when you use Claude Code!")
+    print("The pixel character will appear when you use Claude Code or Codex in Vibe mode.")
     print()
 
     return True
