@@ -19,6 +19,7 @@ from src.state_machine import State, StateMachine
 from src.activity_monitor import ActivityMonitor
 from src.activity_bridge import ActivityBridge
 from src.game_window import GameWindow
+from src.mob_manager import MobManager
 from src.system_tray import SystemTray
 
 
@@ -56,6 +57,8 @@ def main():
     # Create system tray
     system_tray = SystemTray(config)
     system_tray.exit_requested.connect(app.quit)
+    mob_manager = MobManager(config, activity_monitor)
+    system_tray.reactive_mode_changed.connect(mob_manager.on_reactive_mode_changed)
 
     # Set initial visibility and animation based on reactive mode and spawn position
     print(f"[MAIN] Reactive mode enabled: {config.reactive_mode_enabled}")
@@ -98,6 +101,7 @@ def main():
         sys.exit(app.exec_())
     finally:
         # Cleanup
+        mob_manager.close_all()
         activity_monitor.stop()
         activity_monitor.wait()
 

@@ -10,6 +10,7 @@ class CharacterSprite(pygame.sprite.Sprite):
     STANDARD_COLUMNS = 4
     STANDARD_ROWS = 4
     STANDARD_FRAME_COUNT = STANDARD_COLUMNS * STANDARD_ROWS
+    _image_cache = {}
 
     def __init__(self, sprite_size=64, use_dragged_animation=True):
         super().__init__()
@@ -22,6 +23,7 @@ class CharacterSprite(pygame.sprite.Sprite):
         self.dragged_frame = 0  # Frame for dragged animation
         self.waving_frame = 0  # Frame for waving animation
         self.appearing_frame = 0  # Frame for appearing animation
+        self.fade_frame = 0  # Frame for fade animation
         self.idle_to_walking_frame = 0  # Frame for idle-to-walking transition
         self.walk_to_idle_frame = 0  # Frame for walk-to-idle transition
         self.drag_to_idle_frame = 0  # Frame for drag-to-idle transition
@@ -31,8 +33,17 @@ class CharacterSprite(pygame.sprite.Sprite):
         self.playing_drag_to_idle = False  # Flag for drag-to-idle transition animation
         self.playing_idle_to_drag = False  # Flag for idle-to-drag transition animation
 
-        # Load sprite images
-        self._load_images()
+        cache_key = (
+            self.sprite_size,
+            self.use_dragged_animation,
+            pygame.display.get_surface() is not None,
+        )
+        cached_images = self._image_cache.get(cache_key)
+        if cached_images is None:
+            self._load_images()
+            self._image_cache[cache_key] = self.images
+        else:
+            self.images = cached_images
 
         # Initialize rect
         self.image = self.images[State.IDLE]
@@ -95,6 +106,13 @@ class CharacterSprite(pygame.sprite.Sprite):
                 self.images[State.APPEARING] = self._repeat_to_standard_length(appearing_frames)
             else:
                 self.images[State.APPEARING] = self._repeat_to_standard_length([self.images[State.IDLE]])
+
+        # Load fade-out animation for companion despawn.
+        fade_sheet_path = os.path.join(sprite_dir, "movement", "fade.png")
+        if os.path.exists(fade_sheet_path):
+            self.images["FADE"] = self._load_standard_animation(fade_sheet_path)
+        else:
+            self.images["FADE"] = list(reversed(self.images[State.APPEARING]))
 
         # Load idle-to-walking transition animation (16 frames total: 4x4 sheet)
         idle_to_walking_path = os.path.join(sprite_dir, "transition", "idle_to_walking.png")
@@ -378,6 +396,16 @@ class CharacterSprite(pygame.sprite.Sprite):
     def reset_appearing_animation(self):
         """Reset appearing animation to first frame"""
         self.appearing_frame = 0
+
+    def update_fade_frame(self):
+        """Advance fade animation frame."""
+        num_frames = len(self.images["FADE"])
+        self.fade_frame = min(self.fade_frame + 1, num_frames - 1)
+        return self.fade_frame >= num_frames - 1
+
+    def reset_fade_animation(self):
+        """Reset fade animation to first frame."""
+        self.fade_frame = 0
 
     def update_drag_to_idle_frame(self):
         """Advance drag-to-idle transition animation frame

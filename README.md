@@ -3,278 +3,178 @@
 ![Vibe Walker Wallpaper](sprites/wallpaper/wall%20paper.png)
 </div>
 
-A fun Windows desktop app featuring an interactive pixel assistant that responds to Claude Code activity.
+A Windows desktop pet that reacts to both Claude Code and Codex activity.
 
-> **✨ POC Release:** Interactive Desktop Pet with drag-and-drop, system tray control, and hybrid reactive/independent modes!
+> **POC Release:** Interactive desktop companion with drag-and-drop, reactive Vibe mode, and multi-mob support for overlapping sessions.
 
-## POC Features (Interactive Desktop Pet)
+## Features
 
-### New in POC
-- **Draggable Character**: Click and drag the minion anywhere on screen
-- **Gravity Physics**: Released minion drops smoothly back to baseline height
-- **System Tray Control**: Always-running app with reactive mode toggle
-- **Hybrid Modes**: 
-  - **Reactive Mode ON**: Minion visible, walks when Claude Code is active, idles when not
-  - **Reactive Mode OFF**: Minion hidden
-- **Interactive States**: HIDDEN, IDLE, WALKING, DRAGGED, DROPPING
+- Reacts to both Claude Code and Codex activity
+- Vibe mode: walks while sessions are active, idles when they are not
+- Multi-mob support for overlapping active sessions
+- Companion mobs spawn with climb-out animation and despawn with fade animation
+- Permission requests trigger the primary mob's waving state
+- Drag-and-drop with gravity and drop-back behavior
+- System tray controls for reactive mode and exit
 
-### Controls
-- **Left Click + Drag**: Pick up and move the minion
-- **System Tray Right-Click**: Toggle reactive mode or exit
-- **Reactive Mode ON**: Minion walks when Claude Code is active, idles when not
-- **Reactive Mode OFF**: Minion disappears
+## Current Behavior
 
-### Architecture
-- **Pygame**: Sprite rendering, drag-and-drop physics, 60 FPS animation
-- **PyQt5**: System tray, window management, Qt-Pygame integration
-- **Hybrid Design**: Leverages strengths of both frameworks
+- 1 active Claude or Codex session: primary mob is active
+- 2 active sessions at the same time: primary mob plus 1 companion
+- More overlapping sessions: additional companion mobs appear
+- When a companion session ends, that extra mob fades out instead of disappearing instantly
 
-## Legacy Features
+Claude and Codex are detected differently:
 
-- **Responsive Character**: Pixel character appears when you send messages to Claude Code
-- **Animated Walking**: Character walks back and forth across the screen while Claude processes
-- **Idle Behavior**: Stops and stands still after Claude finishes
-- **Interrupt Detection**: Automatically detects when you interrupt queries
-- **Lightweight**: Minimal CPU and memory usage
-- **Customizable**: Configure behavior via JSON file
+- Claude Code: hook-based detection via `trace/query_events.jsonl`
+- Codex: session-log detection via `~/.codex/sessions`
+
+On Windows, `~/.codex/sessions` usually resolves to:
+
+`C:\Users\<YourUser>\.codex\sessions`
 
 ## Requirements
 
 - Windows 10 or 11
-- Python 3.8 or higher
-- PyQt5 5.15.9
-- Pygame 2.5.2
-- Pillow 10.0.0
+- Python 3.8+
+- PyQt5
+- Pygame
+- Pillow
 - psutil
-- pytest (for testing)
 
 ## Quick Start
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/yourusername/vibe-walker.git
-   cd vibe-walker
-   ```
+1. Clone the repo:
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+git clone https://github.com/yourusername/vibe-walker.git
+cd vibe-walker
+```
 
-3. **Configure Claude Code hooks**:
-   ```bash
-   python setup.py
-   ```
+2. Install dependencies:
 
-4. **Run the app**:
-   ```bash
-   python src/main.py
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-That's it! The character will appear on your taskbar when you use Claude Code.
+3. Configure Claude hooks:
 
-## Usage
+```bash
+python setup.py
+```
 
-### Running the Application
-
-From the project root directory:
+4. Start the app:
 
 ```bash
 python src/main.py
 ```
 
-Run `python setup.py` once to configure hooks. After that, `python src/main.py` starts the character monitor.
+## Setup Notes
 
-### Using Claude Code
+`setup.py` configures Claude Code hooks globally through `~/.claude/settings.json`.
 
-Simply use Claude Code normally in this project! The character will automatically:
-- **Appear and walk** when you send a message to Claude Code
-- **Stop and stand idle** when Claude finishes processing
-- **Disappear** after 7 seconds of inactivity
+Codex does not currently use an installed hook in this project. Instead, Vibe Walker monitors Codex session logs from `~/.codex/sessions`.
 
-The `.claude/settings.json` hooks automatically write trace events that the monitor detects.
+So the current integration model is:
 
-### Important Notes
+- Claude: hook events written into this repo's trace file
+- Codex: activity inferred from Codex-generated session JSONL logs
 
-- **Only ONE instance** should run at a time - the application will prevent multiple instances
-- If you see multiple characters, stop extra Python processes and run a single instance
-- The application runs in the background with no visible window (except the character)
+## Usage
 
-### Controls
+Run the app from the project root:
 
-- **Start character monitor**: `python src/main.py` (from project root)
-- **Use Claude Code**: Just chat normally - the character appears automatically!
-- **Stop monitor**: Press `Ctrl+C` in the terminal running main.py
-- To run on startup: See the "Run on Startup" section below
+```bash
+python src/main.py
+```
+
+Then use Claude Code or Codex normally.
+
+What happens:
+
+- active session starts -> mob appears/walks
+- permission request -> primary mob waves
+- overlapping sessions -> extra companion mobs appear
+- extra session ends -> companion fades out
+
+## Controls
+
+- Left click + drag: move the primary mob
+- System tray right-click: toggle reactive mode or exit
+
+Companion mobs are visual companions only. They are not draggable and do not currently wave on permission requests.
 
 ## Configuration
 
-Edit `config.json` to customize behavior:
+Edit `config.json` to customize behavior. Important fields include:
 
-```json
-{
-  "poll_interval_ms": 2000,
-  "idle_timeout_sec": 30,
-  "animation_fps": 7,
-  "movement_speed_px": 2,
-  "sprite_size": 64,
-   "window_bottom_offset": 50,
-   "trace_file_path": "trace/query_events.jsonl",
-   "trace_poll_interval_ms": 500
-}
-```
-
-### Configuration Options
-
-- **poll_interval_ms**: Legacy setting (not currently used)
-- **idle_timeout_sec**: How long character stands idle before disappearing (seconds, default: 7)
-- **animation_fps**: Animation frames per second
-- **movement_speed_px**: Movement speed in pixels per frame
-- **sprite_size**: Size of sprite images in pixels
-- **window_bottom_offset**: Distance from bottom of screen (pixels)
-- **trace_file_path**: JSONL file where Claude Code hooks write lifecycle events
-- **trace_poll_interval_ms**: How often to read new trace events (milliseconds, default: 500)
+- `behavior_mode`: use `"vibe"` for activity-driven behavior
+- `reactive_mode_enabled`: show or hide the reactive mob system
+- `trace_file_path`: Claude activity trace file
+- `trace_poll_interval_ms`: activity polling interval
+- `codex_activity_enabled`: enable Codex activity monitoring
+- `codex_sessions_dir`: Codex sessions directory
+- `sprite_size`
+- `animation_fps`
+- `movement_speed_px`
 
 ## How It Works
 
-1. **Global Hooks**: Configured in `~/.claude/settings.json` (works in ALL repos)
-   - `UserPromptSubmit` → writes `query_started` event (also closes interrupted queries)
-   - `Stop` → writes `query_finished` when query completes
-   - `StopFailure` → writes `query_finished` when query fails
-   - Events are written to `<repo>/trace/query_events.jsonl`
+1. Claude hooks write lifecycle events into `trace/query_events.jsonl`.
+2. Codex writes its own session logs under `~/.codex/sessions`.
+3. `ActivityMonitor` combines both sources into a shared active-session count.
+4. `GameWindow` drives the primary mob.
+5. `MobManager` creates companion mobs for extra overlapping sessions.
 
-2. **Trace Monitoring**: ActivityMonitor reads the trace file and detects:
-   - When queries start (character appears and walks)
-   - When queries finish (character stops and goes idle)
-   - Orphaned queries (stuck states)
+## Project Structure
 
-3. **State Management**: Character has 4 states:
-   - `HIDDEN` - Not visible
-   - `WALKING_RIGHT/LEFT` - Active query running
-   - `IDLE` - Query finished, standing still for 7 seconds
+```text
+vibe-walker/
+|-- src/
+|   |-- activity_bridge.py
+|   |-- activity_monitor.py
+|   |-- companion_window.py
+|   |-- config.py
+|   |-- config_dialog.py
+|   |-- drag_handler.py
+|   |-- game_window.py
+|   |-- main.py
+|   |-- mob_manager.py
+|   |-- sprite_manager.py
+|   |-- state_machine.py
+|   `-- system_tray.py
+|-- sprites/
+|-- tests/
+|-- trace/
+|-- config.json
+|-- setup.py
+`-- README.md
+```
 
-4. **Animation**: Sprite-based animation with:
-   - Walk cycles (left and right)
-   - Idle pose
-   - Fade-away effect when disappearing
+## Testing
 
-5. **Window Overlay**: Transparent, click-through PyQt5 window above taskbar
+Run the test suite with:
 
-## Customizing the Character
-
-### Creating Custom Sprites
-
-Replace the image assets in `sprites/` with your own PNG files:
-
-- `sprites/idle.png` - Standing still pose
-- `sprites/movement/*.png` - 4x4 movement animation sheets
-- `sprites/transition/*.png` - 4x4 transition animation sheets
-
-Animation sheets should contain 16 frames arranged in a 4x4 grid.
-
-## Run on Startup (Windows)
-
-### Option 1: Task Scheduler (Recommended)
-
-1. Open Task Scheduler
-2. Create Basic Task
-3. Trigger: "When I log on"
-4. Action: "Start a program"
-5. Program: `pythonw.exe`
-6. Arguments: `src/main.py`
-7. Start in: `C:\path\to\vibe-walker`
-
-### Option 2: Startup Folder
-
-1. Press `Win+R`, type `shell:startup`, press Enter
-2. Create a shortcut to run the application
-3. Target: `pythonw.exe src/main.py`
-4. Start in: `C:\path\to\vibe-walker`
-
-**Note**: Use `pythonw.exe` instead of `python.exe` to run without a console window.
+```bash
+python -m pytest -q
+```
 
 ## Troubleshooting
 
-### Character doesn't appear
+If the app does not react:
 
-- **Check monitor is running**: Run `python src/main.py` from the **project root**
-- **Check console output**: Should show "[ANIMATOR] Loaded sprite: ..." messages
-- **Verify trace events**: Check that `trace/query_events.jsonl` is being created when you send messages
-- **Ensure PyQt5 is installed**: `pip install PyQt5`
-- **Re-run setup**: If hooks aren't working, run `python src/main.py` again to reconfigure
+- make sure `python src/main.py` is running
+- restart the app after code changes
+- re-run `python setup.py` if Claude hook events are missing
+- verify Claude trace output exists in `trace/query_events.jsonl`
+- verify Codex session logs exist under `~/.codex/sessions`
 
-### Character appears behind taskbar
+If a second mob does not appear:
 
-- Adjust `window_bottom_offset` in `config.json` (increase the value)
-- Check if "always on top" is working (may conflict with certain Windows settings)
-
-### Animation is choppy
-
-- Reduce `animation_fps` in `config.json`
-- Close other resource-intensive applications
-
-### Character doesn't disappear after finishing (Stuck Walking)
-
-This happens when queries don't get properly closed (orphaned queries).
-
-**Quick fix:**
-```bash
-# Clear the trace file
-echo "" > trace/query_events.jsonl
-```
-
-**Why this happens:**
-- The Stop hook didn't fire properly
-- Query was interrupted before completion
-- Multiple hook configurations (check for duplicate hooks in local `.claude/settings.json`)
-
-**Prevention:**
-- Don't add hooks to local `.claude/settings.json` in the repo (only use global settings)
-- Clear the trace file if the character gets stuck
-
-## Development
-
-### Project Structure
-
-```
-vibe-walker/
-├── .claude/                   # Local development settings (gitignored)
-├── src/
-│   ├── __init__.py            # Package initialization
-│   ├── main.py                # Application entry point
-│   ├── config.py              # Configuration management
-│   ├── state_manager.py       # State machine logic
-│   ├── activity_monitor.py    # Trace event monitoring
-│   ├── animator.py            # Sprite animation
-│   ├── character_window.py    # Transparent window overlay
-│   └── particle_system.py     # Particle effects
-├── sprites/                   # Sprite images (64x64 PNG)
-├── trace/                     # Query event logs (auto-created)
-│   └── query_events.jsonl     # Trace events from Claude Code
-├── config.json                # Application configuration (portable)
-├── setup.py                   # Automated setup script
-├── requirements.txt           # Python dependencies
-└── README.md                  # This file
-```
-
-### Adding New Features
-
-Some ideas for enhancements:
-
-- System tray icon with menu
-- Multiple character designs
-- Different behaviors based on activity type
-- Sound effects
-- Customization UI
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file for details
+- ensure two sessions are active at the same time
+- make sure reactive mode is enabled
+- confirm you restarted after updating the app
 
 ## Credits
 
-Created with Claude Code
-
----
-
-Enjoy your new desktop companion! If you encounter any issues, please check the troubleshooting section or open an issue on GitHub.
+Created with Claude Code and Codex.

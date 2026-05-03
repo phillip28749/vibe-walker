@@ -14,6 +14,7 @@ class ActivityMonitor(QThread):
     activity_stopped = pyqtSignal()
     action_needed_started = pyqtSignal()
     action_needed_stopped = pyqtSignal()
+    active_instance_count_changed = pyqtSignal(int)
 
     def __init__(self, config):
         """Initialize activity monitor."""
@@ -35,6 +36,7 @@ class ActivityMonitor(QThread):
         self.current_activity_status = "none"
         self.pending_actions = {}
         self.rejection_timeout_sec = 30
+        self._last_active_instance_count = 0
 
     def run(self):
         """Run the monitoring loop in the background thread."""
@@ -59,7 +61,12 @@ class ActivityMonitor(QThread):
             self._consume_new_events()
             self._consume_codex_events()
             self._check_action_timeouts()
-            is_active = bool(self.open_queries or self.codex_active_turns)
+            active_instance_count = self._get_active_instance_count()
+            if active_instance_count != self._last_active_instance_count:
+                self._last_active_instance_count = active_instance_count
+                self.active_instance_count_changed.emit(active_instance_count)
+
+            is_active = active_instance_count > 0
 
             if self.current_activity_status != "action_needed":
                 new_status = "thinking" if is_active else "none"
@@ -82,6 +89,10 @@ class ActivityMonitor(QThread):
                 self.was_active = False
         except Exception as exc:
             print(f"[MONITOR] Error checking activity: {exc}")
+
+    def _get_active_instance_count(self):
+        """Return the total number of concurrently active activity sources."""
+        return len(self.open_queries) + len(self.codex_active_turns)
 
     def _consume_new_events(self):
         """Consume newly appended trace events and update open query state."""

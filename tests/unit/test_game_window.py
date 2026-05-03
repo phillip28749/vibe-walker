@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+import numpy as np
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 from src.game_window import GameWindow
@@ -53,6 +54,10 @@ def mock_pygame():
 
         # Mock pygame.sprite
         mock_pg.sprite.Group = Mock(return_value=Mock())
+
+        # Mock pygame.surfarray
+        mock_pg.surfarray.pixels_alpha = Mock(return_value=np.zeros((64, 64), dtype=np.uint8))
+        mock_pg.surfarray.array_alpha = Mock(return_value=np.zeros((64, 64), dtype=np.uint8))
 
         # Mock pygame.quit
         mock_pg.quit = Mock()

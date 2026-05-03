@@ -155,6 +155,35 @@ def test_codex_permission_request_emits_action_needed_signals(tmp_path, qtbot):
     assert monitor.current_activity_status == "thinking"
 
 
+def test_active_instance_count_signal_includes_claude_and_codex(tmp_path, qtbot):
+    trace_path = tmp_path / "query_events.jsonl"
+    monitor = ActivityMonitor(DummyConfig(trace_path))
+    sessions_dir = tmp_path / "codex-sessions"
+    sessions_dir.mkdir()
+    session_file = sessions_dir / "session.jsonl"
+
+    write_events(
+        trace_path,
+        [{"query_id": "claude-1", "event_type": "query_started", "timestamp": 1.0}],
+    )
+    write_events(
+        session_file,
+        [
+            {
+                "timestamp": "2026-05-04T00:00:00Z",
+                "type": "event_msg",
+                "payload": {"type": "task_started", "turn_id": "codex-1"},
+            }
+        ],
+    )
+
+    with qtbot.waitSignal(monitor.active_instance_count_changed) as blocker:
+        monitor._check_activity()
+
+    assert blocker.args == [2]
+    assert monitor._get_active_instance_count() == 2
+
+
 def test_behavior_mode_maps_legacy_claude_to_vibe(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"behavior_mode": "claude"}', encoding="utf-8")

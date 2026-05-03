@@ -222,45 +222,55 @@ class GameWindow(QMainWindow):
 
     def update_game(self):
         """Main Pygame update loop (called every frame)"""
-        self._maybe_enforce_topmost()
-        self._refresh_active_window_bounds()
-        self._recover_if_display_layout_changed()
+        try:
+            self._maybe_enforce_topmost()
+            self._refresh_active_window_bounds()
+            self._recover_if_display_layout_changed()
 
-        # Process events
-        for event in pygame.event.get():
-            self._handle_event(event)
+            # Process events
+            for event in pygame.event.get():
+                self._handle_event(event)
 
-        # Update sprite based on state
-        self._update_sprite()
+            # Update sprite based on state
+            self._update_sprite()
 
-        # Update drag position if dragging
-        self._update_drag()
+            # Update drag position if dragging
+            self._update_drag()
 
-        # Update drag/drop physics
-        self._update_physics()
+            # Update drag/drop physics
+            self._update_physics()
 
-        # Render to an alpha surface so transparency comes from the sprite,
-        # not from a reserved background color.
-        self.render_surface.fill((0, 0, 0, 0))
-        self.sprite_group.draw(self.render_surface)
-        self._blit_render_surface_to_display()
+            # Render to an alpha surface so transparency comes from the sprite,
+            # not from a reserved background color.
+            self.render_surface.fill((0, 0, 0, 0))
+            self.sprite_group.draw(self.render_surface)
+            self._blit_render_surface_to_display()
 
-        # Only update mask if sprite image changed
-        if self.sprite.image != self.last_sprite_image:
-            self._update_transparency_mask()
-            self.last_sprite_image = self.sprite.image
+            # Only update mask if sprite image changed
+            if self.sprite.image != self.last_sprite_image:
+                self._update_transparency_mask()
+                self.last_sprite_image = self.sprite.image
 
-        pygame.display.flip()
+            pygame.display.flip()
 
-        # Maintain framerate
-        self.clock.tick(self.config.pygame_fps)
+            # Maintain framerate
+            self.clock.tick(self.config.pygame_fps)
+        except pygame.error as exc:
+            if self.timer.isActive():
+                self.timer.stop()
+            print(f"[GAME] Stopping frame update after pygame shutdown: {exc}")
 
     def _blit_render_surface_to_display(self):
         """Draw visible sprite pixels without blending them against a mask color."""
         display_surface = self.render_surface.copy()
-        alpha = pygame.surfarray.pixels_alpha(display_surface)
-        alpha[alpha > 0] = 255
-        del alpha
+        try:
+            alpha = pygame.surfarray.pixels_alpha(display_surface)
+            alpha[alpha > 0] = 255
+            del alpha
+        except (ValueError, TypeError, pygame.error):
+            # Some pygame/numpy combinations cannot expose the alpha view without copying.
+            # Falling back to the original surface keeps rendering responsive.
+            pass
 
         self.pygame_screen.fill((0, 0, 0))
         self.pygame_screen.blit(display_surface, (0, 0))
@@ -1226,8 +1236,11 @@ class GameWindow(QMainWindow):
         from PyQt5.QtCore import QRect
         from PyQt5.QtGui import QRegion
 
-        # Get rendered alpha data from the offscreen surface.
-        alpha_data = pygame.surfarray.array_alpha(self.render_surface)
+        try:
+            # Get rendered alpha data from the offscreen surface.
+            alpha_data = pygame.surfarray.array_alpha(self.render_surface)
+        except (ValueError, TypeError, pygame.error):
+            return
 
         # array_alpha is shaped as (width, height), so transpose it to y/x coordinates.
         is_visible = alpha_data.T > 24

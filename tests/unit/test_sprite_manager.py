@@ -85,3 +85,13 @@ def test_all_states_handled(pygame_init):
     # Test HIDDEN state
     sprite.update_state(State.HIDDEN)
     assert sprite.current_state == State.HIDDEN
+
+
+def test_sprite_reuses_cached_images(pygame_init):
+    """Sprites with the same config reuse loaded frame data."""
+    CharacterSprite._image_cache.clear()
+
+    first = CharacterSprite(sprite_size=64, use_dragged_animation=False)
+    second = CharacterSprite(sprite_size=64, use_dragged_animation=False)
+
+    assert first.images is second.images
