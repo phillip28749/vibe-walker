@@ -19,7 +19,7 @@ class ConfigDialog(QDialog):
     TOOLTIPS = {
         'sprite_size': 'Size of the character sprite in pixels',
         'reactive_mode_enabled': 'Show/hide minion based on Claude activity',
-        'behavior_mode': 'Claude mode: responds to activity | Pet mode: random walking',
+        'behavior_mode': 'Vibe mode: responds to Claude Code and Codex activity | Pet mode: random walking',
         'random_spawn_enabled': 'Randomize spawn position (if disabled, spawns centered)',
         'walk_freely': 'Allow walking freely across all monitors (if disabled, stays on current monitor)',
         'window_bottom_offset': 'Distance from bottom of screen to window edge',
@@ -163,7 +163,7 @@ class ConfigDialog(QDialog):
 
         # behavior_mode
         behavior_mode = QComboBox()
-        behavior_mode.addItems(['claude', 'pet'])
+        behavior_mode.addItems(['vibe', 'pet'])
         behavior_mode.setToolTip(self.TOOLTIPS['behavior_mode'])
         layout.addRow("Behavior Mode:", behavior_mode)
         self.widgets['behavior_mode'] = behavior_mode

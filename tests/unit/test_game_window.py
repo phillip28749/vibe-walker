@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 from src.game_window import GameWindow

@@ -1,6 +1,5 @@
-"""Setup script for Vibe Walker - Configures global Claude Code hooks."""
+"""Setup script for Vibe Walker - configures Claude Code hooks and Codex support."""
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -8,7 +7,7 @@ from pathlib import Path
 HOOK_VERSION = "2.0.0"
 
 def setup_global_hooks(force=False):
-    """Configure global Claude Code hooks with the correct trace file path."""
+    """Configure Claude Code hooks with the correct trace file path."""
 
     print("=" * 60)
     print("VIBE WALKER - Setup")
@@ -27,6 +26,7 @@ def setup_global_hooks(force=False):
 
     print(f"Repository directory: {repo_dir}")
     print(f"Trace file will be: {trace_file}")
+    print("Codex support uses session logs from ~/.codex/sessions (no hook install needed)")
     print()
 
     # Get global Claude settings path
@@ -99,17 +99,6 @@ def setup_global_hooks(force=False):
             {
                 "type": "command",
                 "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"query_finished\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"reason\\":\\"failure\\"}}}}" >> "$TRACE_FILE"; rm -f /tmp/vibe_walker_current_query.txt\'',
-                "async": True
-            }
-        ]
-    }
-
-    pre_tool_use_hook = {
-        "matcher": "Bash|Write|Edit|Agent|Skill|Config",
-        "hooks": [
-            {
-                "type": "command",
-                "command": f'bash -c \'TRACE_FILE="{bash_trace_path}"; mkdir -p "$(dirname "$TRACE_FILE")"; QUERY_ID=$(cat /tmp/vibe_walker_current_query.txt 2>/dev/null || echo "query_$(date +%s%N)"); TOOL_NAME="${{TOOL_NAME:-unknown}}"; TIMESTAMP=$(date +%s.%N 2>/dev/null || date +%s); echo "{{\\"query_id\\":\\"$QUERY_ID\\",\\"event_type\\":\\"action_needed\\",\\"timestamp\\":$TIMESTAMP,\\"payload\\":{{\\"trigger\\":\\"pre_tool_use\\",\\"tool_name\\":\\"$TOOL_NAME\\"}}}}" >> "$TRACE_FILE"\'',
                 "async": True
             }
         ]
@@ -193,15 +182,14 @@ def setup_global_hooks(force=False):
 
     print()
     print("=" * 60)
-    print(f"[SUCCESS] Vibe Walker hooks configured! (v{HOOK_VERSION})")
+    print(f"[SUCCESS] Vibe Walker integration configured! (v{HOOK_VERSION})")
     print("=" * 60)
     print()
     print("Next steps:")
     print("1. Install dependencies: pip install -r requirements.txt")
-    print("2. Generate sprites: python generate_sprites.py")
-    print("3. Run Vibe Walker: python src/main.py")
+    print("2. Run Vibe Walker: python src/main.py")
     print()
-    print("The pixel character will appear when you use Claude Code!")
+    print("The pixel character will appear when you use Claude Code or Codex in Vibe mode.")
     print()
 
     return True

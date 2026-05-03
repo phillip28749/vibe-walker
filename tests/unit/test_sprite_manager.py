@@ -20,6 +20,21 @@ def test_sprite_loads_images(pygame_init):
     assert sprite.images[State.DRAGGED] is not None
 
 
+def test_animations_use_standard_frame_count(pygame_init):
+    """Movement and transition animations render as 16-frame cycles."""
+    sprite = CharacterSprite(sprite_size=64)
+
+    assert len(sprite.images[State.WALKING]["right"]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images[State.WALKING]["left"]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images[State.WAVING]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images[State.APPEARING]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images[State.DRAGGED]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images["IDLE_TO_WALKING"]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images["WALK_TO_IDLE"]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images["DRAG_TO_IDLE"]) == CharacterSprite.STANDARD_FRAME_COUNT
+    assert len(sprite.images["IDLE_TO_DRAG"]) == CharacterSprite.STANDARD_FRAME_COUNT
+
+
 def test_sprite_has_rect(pygame_init):
     """Sprite has bounding rect for collision"""
     sprite = CharacterSprite(sprite_size=64)
@@ -48,11 +63,12 @@ def test_walk_frame_advances(pygame_init):
     sprite = CharacterSprite(sprite_size=64)
     sprite.update_state(State.WALKING)
 
-    # Test frame cycles: 0 -> 1 -> 0
+    # Test frame cycles through the walking sheet frames.
     assert sprite.walk_frame == 0
     sprite.update_walk_frame()
     assert sprite.walk_frame == 1
-    sprite.update_walk_frame()
+    for _ in range(len(sprite.images[State.WALKING]["right"]) - 1):
+        sprite.update_walk_frame()
     assert sprite.walk_frame == 0
 
 
