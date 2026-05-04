@@ -25,9 +25,9 @@ class ActivityMonitor(QThread):
         self.trace_path = Path(self.config.trace_file_path)
         self.trace_read_offset = 0
         self.trace_last_mtime_ns = None
-        self.open_queries = set()
+        self.open_queries = {}  # {query_id: (start_time, last_event_time)}
         self.codex_sessions_dir = Path(self.config.codex_sessions_dir)
-        self.codex_active_turns = set()
+        self.codex_active_turns = {}  # {turn_id: (start_time, last_event_time)}
         self.codex_file_offsets = {}
         self.codex_file_mtimes = {}
         self.codex_pending_approvals = {}
@@ -37,6 +37,8 @@ class ActivityMonitor(QThread):
         self.pending_actions = {}
         self.rejection_timeout_sec = 30
         self._last_active_instance_count = 0
+        self.query_timeout_sec = 600  # 10 minutes - clean up stale queries
+        self.query_no_event_timeout_sec = 60  # 1 minute - clean up if no events received
 
     def run(self):
         """Run the monitoring loop in the background thread."""
@@ -92,6 +94,7 @@ class ActivityMonitor(QThread):
 
     def _get_active_instance_count(self):
         """Return the total number of concurrently active activity sources."""
+        self._cleanup_stale_queries()
         return len(self.open_queries) + len(self.codex_active_turns)
 
     def _consume_new_events(self):
@@ -171,13 +174,19 @@ class ActivityMonitor(QThread):
         if event.get("type") != "event_msg":
             return
 
+        current_time = time.time()
         event_type = payload.get("type")
         turn_id = payload.get("turn_id")
 
         if event_type == "task_started" and turn_id:
-            self.codex_active_turns.add(turn_id)
+            if turn_id not in self.codex_active_turns:
+                self.codex_active_turns[turn_id] = (current_time, current_time)
         elif event_type == "task_complete" and turn_id:
-            self.codex_active_turns.discard(turn_id)
+            self.codex_active_turns.pop(turn_id, None)
+        elif turn_id and turn_id in self.codex_active_turns:
+            # Update last event time for any other event type
+            start_time, _ = self.codex_active_turns[turn_id]
+            self.codex_active_turns[turn_id] = (start_time, current_time)
 
         call_id = payload.get("call_id")
         if call_id and payload.get("type") == "exec_command_end":
@@ -244,15 +253,22 @@ class ActivityMonitor(QThread):
         if not query_id:
             return
 
+        current_time = time.time()
         event_type = event.get("event_type")
         if event_type == "query_started":
-            self.open_queries.add(query_id)
+            if query_id not in self.open_queries:
+                self.open_queries[query_id] = (current_time, current_time)
             return
 
         if event_type in {"query_finished", "query_error"}:
-            self.open_queries.discard(query_id)
+            self.open_queries.pop(query_id, None)
             self._cleanup_pending_action(query_id, reason="query_ended")
             return
+
+        # Update last event time for any other event type
+        if query_id in self.open_queries:
+            start_time, _ = self.open_queries[query_id]
+            self.open_queries[query_id] = (start_time, current_time)
 
         if event_type == "action_needed":
             payload = event.get("payload", {})
@@ -305,6 +321,38 @@ class ActivityMonitor(QThread):
             elif self.config.get("debug_action_detection", False):
                 result = "completed" if success else "failed"
                 print(f"[DEBUG] {tool_name} {result} (auto-approved, no dialog)")
+
+    def _cleanup_stale_queries(self):
+        """Remove queries that have been open for too long or haven't received events."""
+        current_time = time.time()
+        stale_query_ids = []
+
+        for query_id, times in list(self.open_queries.items()):
+            start_time, last_event_time = times
+            time_since_start = current_time - start_time
+            time_since_last_event = current_time - last_event_time
+
+            # Clean up if: no events for 1 minute, OR open for 10 minutes
+            if time_since_last_event > self.query_no_event_timeout_sec or time_since_start > self.query_timeout_sec:
+                stale_query_ids.append(query_id)
+
+        for query_id in stale_query_ids:
+            self.open_queries.pop(query_id, None)
+            print(f"[MONITOR] Cleaned up stale query {query_id}")
+
+        stale_turn_ids = []
+        for turn_id, times in list(self.codex_active_turns.items()):
+            start_time, last_event_time = times
+            time_since_start = current_time - start_time
+            time_since_last_event = current_time - last_event_time
+
+            # Clean up if: no events for 1 minute, OR open for 10 minutes
+            if time_since_last_event > self.query_no_event_timeout_sec or time_since_start > self.query_timeout_sec:
+                stale_turn_ids.append(turn_id)
+
+        for turn_id in stale_turn_ids:
+            self.codex_active_turns.pop(turn_id, None)
+            print(f"[MONITOR] Cleaned up stale Codex turn {turn_id}")
 
     def _check_action_timeouts(self):
         """Check whether any pending actions have timed out."""

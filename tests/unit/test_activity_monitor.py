@@ -36,16 +36,17 @@ def test_consume_new_events_only_reads_appended_lines(tmp_path):
 
     write_events(trace_path, [started])
     monitor._consume_new_events()
-    assert monitor.open_queries == {"q1"}
+    assert "q1" in monitor.open_queries
+    assert isinstance(monitor.open_queries["q1"], tuple)  # Should be (start_time, last_event_time)
     first_offset = monitor.trace_read_offset
 
     monitor._consume_new_events()
     assert monitor.trace_read_offset == first_offset
-    assert monitor.open_queries == {"q1"}
+    assert "q1" in monitor.open_queries
 
     append_events(trace_path, [finished])
     monitor._consume_new_events()
-    assert monitor.open_queries == set()
+    assert len(monitor.open_queries) == 0
     assert monitor.trace_read_offset > first_offset
 
 
@@ -58,7 +59,8 @@ def test_consume_new_events_recovers_after_trace_file_truncation(tmp_path):
         [{"query_id": "old", "event_type": "query_started", "timestamp": 1.0}],
     )
     monitor._consume_new_events()
-    assert monitor.open_queries == {"old"}
+    assert "old" in monitor.open_queries
+    assert isinstance(monitor.open_queries["old"], tuple)
     assert monitor.trace_read_offset > 0
 
     write_events(
@@ -68,7 +70,8 @@ def test_consume_new_events_recovers_after_trace_file_truncation(tmp_path):
     monitor.open_queries.clear()
     monitor._consume_new_events()
 
-    assert monitor.open_queries == {"new"}
+    assert "new" in monitor.open_queries
+    assert isinstance(monitor.open_queries["new"], tuple)
     assert monitor.trace_read_offset == trace_path.stat().st_size
 
 
@@ -91,7 +94,8 @@ def test_consume_codex_events_tracks_task_started_and_complete(tmp_path):
     )
 
     monitor._consume_codex_events()
-    assert monitor.codex_active_turns == {"turn-1"}
+    assert "turn-1" in monitor.codex_active_turns
+    assert isinstance(monitor.codex_active_turns["turn-1"], tuple)
 
     append_events(
         session_file,
@@ -105,7 +109,7 @@ def test_consume_codex_events_tracks_task_started_and_complete(tmp_path):
     )
 
     monitor._consume_codex_events()
-    assert monitor.codex_active_turns == set()
+    assert len(monitor.codex_active_turns) == 0
 
 
 def test_codex_permission_request_emits_action_needed_signals(tmp_path, qtbot):
